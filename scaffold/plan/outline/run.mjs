@@ -13,9 +13,10 @@ import { fileURLToPath } from 'node:url';
 import { readPlan, writePlan } from '../intake/serve.mjs';
 import { callModel, DEFAULT_MODEL, loadKey } from '../direction/propose.mjs';
 import { agentMode, agentFetch, useProjectTasks, exitIfAwaiting } from '../agent.mjs';
-import { openInBrowser } from '../open.mjs';
+import { openPage } from '../pages.mjs';
 import { outlineSystem, outlinePrompt, OutlineAnswerSchema, applyOutline, confirmOutline, autoConfirmable, dataChanges } from './outline.mjs';
 import { testReach } from './signin.mjs';
+import { readCodeRead, writeCodeRead, codeReadPrompt, codeReadBlock, CodeReadSchema } from '../local.mjs';
 import { startOutlineServer } from './serve.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -26,9 +27,18 @@ export async function writeOutline(projectDir, { again = false, fetchImpl, key, 
   if (plan.video.intake?.outline && !again) return plan.video.intake.outline;
   if (!fetchImpl) {
     if (agentMode()) { fetchImpl = agentFetch(useProjectTasks(projectDir)); key = 'agent'; }
-    else { key = loadKey(ROOT); if (!key) throw new Error('No OPENROUTER_API_KEY: run the skill in agent mode (ULTRADEMO_MODE=agent).'); fetchImpl = globalThis.fetch; }
+    else { key = loadKey(ROOT); if (!key) throw new Error('API mode (ULTRADEMO_MODE=api) needs OPENROUTER_API_KEY; without it, leave the mode unset and your AI session writes this.'); fetchImpl = globalThis.fetch; }
   }
-  const { data } = await callModel({ name: 'outline', model, key, system: outlineSystem(), prompt: outlinePrompt(plan.video), schema: OutlineAnswerSchema, fetchImpl, log: () => {} });
+  // D-117: the product's code, read once by the AI session (read only) before the outline, when the brief gives a folder
+  const local = plan.video.intake?.local;
+  if (local?.folder && !readCodeRead(projectDir)) {
+    if (key === 'agent') {
+      const { data: read } = await callModel({ name: 'code-read', model, key, system: 'You read a product\'s code to learn what a product video can show. You only read; you never run or change anything.', prompt: codeReadPrompt(local), schema: CodeReadSchema, fetchImpl, log: () => {} });
+      writeCodeRead(projectDir, read);
+      log(`Code read: ${read.screens.length} screens, ${read.flows.length} flows (${path.join(projectDir, 'code', 'read.json')}).`);
+    } else log('The code folder is read by your AI session; in API mode the outline goes on without it.');
+  }
+  const { data } = await callModel({ name: 'outline', model, key, system: outlineSystem(), prompt: outlinePrompt(plan.video) + codeReadBlock(readCodeRead(projectDir)) + (await import('../notes.mjs')).notesBlock(projectDir), schema: OutlineAnswerSchema, fetchImpl, log: () => {} });
   const outline = applyOutline(plan, data);
   writePlan(projectDir, plan);
   log(`Outline written: ${outline.moments.length} moments, about ${Math.round(outline.moments.reduce((a, m) => a + m.seconds, 0))} s.`);
@@ -69,8 +79,8 @@ async function main() {
   }
   if (argv.includes('--no-serve')) return;
   const srv = await startOutlineServer({ projectDir: dir });
-  console.log(`Outline page: ${srv.url}`);
-  if (!process.env.ULTRADEMO_NO_OPEN) openInBrowser(srv.url);
+  const how = process.env.ULTRADEMO_NO_OPEN ? '' : await openPage(dir, 'outline', srv.url);
+  console.log(`Outline page: ${srv.url}${how ? `  (${how})` : ''}`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();

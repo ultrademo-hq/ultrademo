@@ -2,6 +2,22 @@
 
 The intake page collects the brief in the user's words and writes the `video` block of `plan.json` (`plan/schema.mjs`), plus a few intake-only fields under `video.intake`. The direction step reads the file next. The page uses plain words only, says "video" and never "film", names no competitor, and shows no field name.
 
+## The five steps (D-96, built 2026-11-12)
+
+The page is one brief in five steps, with a summary of every choice beside them (each tagged From you, From your request, From your site, Claude's pick, Check this or Set by you; only Check this asks for a look):
+
+1. **Start, "What is this video about?"** The product (new, or a saved brand), video type and scope (with the tutorial's details), what it covers (`intake.cover`), what it is for (`intake.purpose`: chips and the user's words), anything else, and more ideas to queue.
+2. **Overview.** "Draft the overview" reads the site, then asks Claude (`POST /api/overview`, `overview.mjs`): in agent mode a task, `tasks/overview-<hash>.task.md`, which the page asks for again until the answer is there; the hash is of Start, so a changed Start is a new task. The answer is a paragraph as segments (some tied to an attribute: length, purpose, viewer, pain, cover, aha, cta) and the attributes with where each came from. The highlights and the key attributes (the story fields, the call to action, the length) stay in step both ways; a highlight whose words are deleted is flagged and can be put back. Saved as `intake.overview` (`text`, `segments`, `sources`, `drafted`). The outline and the direction steps read it with Start's fields.
+3. **Screens and footage:** sources, product type, footage, sign-in. 4. **Sound:** narration (by video type until picked), voice, music, captions. 5. **Look and finish:** looks, effects, format, social cut, motion, autonomy, reference video, name.
+
+The sections are still rendered as before (so every field keeps its id and the saved format is unchanged); the page moves each into its step when it loads.
+
+A request from the chat arrives in `brief-seed.json` and the page drafts the overview at once; a queued video's seed (`"from": "queue"`) opens on Start, filled.
+
+## Queued videos
+
+Ideas queued on Start become their own folders beside this one when the brief is saved (`plan/queue.mjs`): `queued.json` and a `brief-seed.json`. The dashboard lists them as Queued with "Start this one"; the Delivery page's "Start a new video" becomes "Next in queue" when the same product (saved brand or site) has one. Each goes through its own brief, outline, direction and review. Tests: `node --test plan/queue.test.mjs`.
+
 ## Run
 
 From `scaffold/`:
@@ -64,6 +80,12 @@ Every text field tells password managers (LastPass, 1Password, Bitwarden) to sta
 ## What "Unsure" does
 
 Every field but the address has it (a checkbox beside a text field, an option in a choice). An Unsure field is stored as `null`, and `video.intake.unsure.<field>` holds the note `Unsure at intake; the direction step proposes it.` followed by `Hint: …` when the user typed something anyway. The page says this once at the top, not per field. On a later visit the page prefills from the plan and shows the hint back in the field with Unsure ticked.
+
+A story field or the length left empty is proposed too, but stored with the note `Left empty at intake; the direction step proposes it.`, so it comes back empty, not ticked (2026-11-11: a reopened brief showed Unsure ticked everywhere). A tick that came back from the saved brief clears as soon as the user types in that field; a tick they make on the page keeps what they type as a hint.
+
+## Carrying the chat request in (`brief-seed.json`)
+
+When the user has already said something in the chat ("an explainer video of https://…"), the agent writes `<project>/brief-seed.json` with only those fields (`url`, `product`, `video_type`, `scope`, `feature`, `length_s`, `claim`, `viewer`, `pain_point`, `proof_moment`, `cta`, `notes`) before it starts the page. A fresh brief opens with them filled in and nothing ticked Unsure; once a brief is saved, the plan wins and the seed is ignored. The agent never saves the brief for the user in review mode.
 
 ## Validation
 

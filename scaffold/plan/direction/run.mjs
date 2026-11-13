@@ -16,7 +16,7 @@
 // --style skips the style screen (the tests and a scripted run). A hard cost cap (--cap, default $3.00) stops the run and says so.
 
 import { learningsFor } from '../learnings.mjs';
-import { listenOnFree, recordPage } from '../pages.mjs';
+import { listenOnFree, recordPage, openPage } from '../pages.mjs';
 import fs from 'node:fs';
 import { openInBrowser } from '../open.mjs';
 import path from 'node:path';
@@ -58,6 +58,7 @@ export function parseArgs(argv) {
     else if (a === '--again') args.again = true;
     else if (a === '--agent') process.env.ULTRADEMO_MODE = 'agent';
     else if (a === '--no-serve') args.serve = false;
+    else if (a === '--skip-outline') args.skipOutline = true;
     else if (a === '--max-pages') args.maxPages = Number(next());
     else if (!a.startsWith('--')) args.projectDir = a;
   }
@@ -148,6 +149,9 @@ function transport(opts) {
   return { fetchImpl, key };
 }
 
+// the page's plain-language summary (summary.mjs) runs on the same transport and ledger
+export { ledgerFor, transport as modelTransport };
+
 /**
  * Steps 1 and 2: the site read and the brand read. Writes direction/proposals.json
  * at stage "style" (no directions yet) and direction/state.json.
@@ -175,7 +179,17 @@ export async function prepareDirection(args, opts = {}) {
     const reportFile = path.join(projectDir, 'scout', 'report.json');
     // a re-run in agent mode (after the agent answered a task) reuses the site read it already made
     if ((args.skipScout || agentMode()) && fs.existsSync(reportFile)) { scout = readJson(reportFile); log('site read: reusing scout/report.json'); }
-    else { log(`site read: ${video.url}`); scout = await readSite({ url: video.url, outDir: projectDir, maxPages: args.maxPages, log: (s) => log(`  ${s}`) }); }
+    else if (!video.url) {
+      // D-117: no site to read (the user described the product, and no local app runs): an empty read
+      scout = { url: '', read_at: new Date().toISOString(), pages: [], claims: [], tokens: { ground: null, ink: null, accent_candidates: [], css_variables: {}, fonts: { headings: null, body: null, mono: null } }, logo: null, notes: ['No site was read: the user described the product themselves (D-117).'] };
+      fs.mkdirSync(path.dirname(reportFile), { recursive: true }); fs.writeFileSync(reportFile, JSON.stringify(scout, null, 1) + '\n');
+      log('site read: none (the product was described on the brief)');
+    }
+    else {
+      log(`site read: ${video.url}`); scout = await readSite({ url: video.url, outDir: projectDir, maxPages: args.maxPages, log: (s) => log(`  ${s}`) });
+      // D-113: the pictures on these pages join the project's set (the user ticks them on the Refine page)
+      try { (await import('../pictures.mjs')).mergePictures(projectDir, path.join(projectDir, 'scout'), 'site read'); } catch {}
+    }
   } finally { if (site) await site.close(); }
   if (args.siteDir) video = { ...video, url: plan.video.url }; // keep the brief's own address in the plan
 
@@ -244,7 +258,7 @@ export async function proposeForStyle(projectDir, choice, opts = {}) {
   if (ledger.reached) throw new CapReached(ledger);
   log(`directions (${model}) · style: ${style === 'brand' ? 'derived from the brand' : style ? style.name : 'left to the skill'}`);
   const dirRes = await proposeDirections({ video, brand, claims: claims.filter((c) => c.use || c.kind === 'sample'), sources, fonts, styles, music, pace, blueprints, scout, projectDir, style, model, key, ledger, fetchImpl, log: (s) => log(`  ${s}`) });
-  const judged = judge(dirRes.data, { fonts, claimIds: new Set(claims.map((c) => c.id)), styleIds: new Set(styles.map((s) => s.id)), musicFiles: music.map((m) => m.file), music, musicPick: video.intake?.music?.file || null, musicOwn: Boolean(video.intake?.music?.own?.path), template: video.template, claim: video.claim, style });
+  const judged = judge(dirRes.data, { fonts, claimIds: new Set(claims.map((c) => c.id)), styleIds: new Set(styles.map((s) => s.id)), musicFiles: music.map((m) => m.file), music, musicPick: video.intake?.music?.file || null, musicOwn: Boolean(video.intake?.music?.own?.path), template: video.template, claim: video.claim, style, effects: video.intake?.effects });
   log(`kept ${judged.directions.length} of ${dirRes.data.directions.length}: ${judged.directions.map((d) => d.name).join(' · ')}${judged.dropped.length ? ` (set aside: ${judged.dropped.map((d) => d.name).join(', ')})` : ''}`);
 
   // 5. sketches and the signature render
@@ -286,7 +300,11 @@ export async function runDirection(args, opts = {}) {
   // directions already written (the pages were stopped and are started again): resume them, never reset them; the step
   // starts over only with --again (resetting here once lost a set of directions the user was about to choose from)
   const existing = args.projectDir ? readJson(path.join(dirOf(path.resolve(args.projectDir)), 'proposals.json'), null) : null;
-  const resume = Boolean(existing?.directions?.length) && !args.again && !args.style;
+  // ...except when the outline was changed and confirmed after these directions were written: they no longer follow it
+  const { staleStep } = await import('../wait.mjs');
+  const redo = Boolean(existing?.directions?.length) && args.projectDir && staleStep(path.resolve(args.projectDir)) === 'outline';
+  if (redo) { log('The outline changed after these directions were written: writing the directions again from it (the site read is reused).'); args.skipScout = true; }
+  const resume = Boolean(existing?.directions?.length) && !args.again && !args.style && !redo;
   if (resume) log(`Directions already written (${existing.directions.map((d) => d.name).join(' · ')}): serving them as they are. Use --again to start the direction step over.`);
   const prep = resume ? { projectDir: path.resolve(args.projectDir), proposals: existing, ledger: ledgerFor(path.resolve(args.projectDir), args.cap) } : await prepareDirection(args, opts);
   let result = prep;
@@ -299,7 +317,8 @@ export async function runDirection(args, opts = {}) {
     const { url } = await listenOnFree((port) => startServer({ projectDir: prep.projectDir, port, costLine: result.ledger.line(), runOpts: { model: args.model, cap: args.cap, frames: args.frames, fixtures: args.fixtures, record: args.record, log } }), args.port);
     recordPage(prep.projectDir, 'direction', url);
     const state = readState(prep.projectDir);
-    log(`Direction step: ${url}${state.stage || 'style'}${openInBrowser(`${url}${state.stage || 'style'}`) ? '  (opened in your browser)' : ''}`);
+    const how = await openPage(prep.projectDir, 'direction', `${url}${state.stage || 'style'}`);
+    log(`Direction step: ${url}${state.stage || 'style'}${how ? `  (${how})` : ''}`);
     log(`Confirm writes: ${path.join(prep.projectDir, 'plan.json')}  (Ctrl+C to stop)`);
   }
   return result;
@@ -311,6 +330,22 @@ if (isMain) {
   if (!args.projectDir || !Number.isFinite(args.port) || !Number.isFinite(args.cap)) {
     console.error('usage: node plan/direction/run.mjs <project-dir> [--port 4322] [--model ...] [--cheap-model ...] [--cap 3.00] [--style <gallery-id>|brand|auto] [--frames hyperframes|playwright] [--site-dir <folder>] [--fixtures <dir>] [--record <dir>] [--skip-scout] [--no-serve]');
     process.exit(2);
+  }
+  // D-91: the outline comes before the directions. In review mode the user confirms it first; a missing outline here
+  // once sent a user from the brief straight to the directions and back to the outline afterwards.
+  const outlineGate = (() => {
+    try {
+      const v = JSON.parse(fs.readFileSync(path.join(path.resolve(args.projectDir), 'plan.json'), 'utf8')).video;
+      if (!v || args.skipOutline || args.again || fs.existsSync(path.join(dirOf(path.resolve(args.projectDir)), 'proposals.json'))) return null;
+      const o = v.intake?.outline;
+      if (o?.status === 'confirmed') return null;
+      if (v.autonomy === 'director' && o) return null;
+      return o ? 'the outline is written but the user has not confirmed it yet' : 'there is no outline yet';
+    } catch { return null; }
+  })();
+  if (outlineGate) {
+    console.error(`Not yet: ${outlineGate}. The outline comes first: node plan/outline/run.mjs ${args.projectDir}, then node plan/wait.mjs ${args.projectDir} outline (in the background); run this again once it exits. --skip-outline overrides, only when the user asked to skip it.`);
+    process.exit(4);
   }
   runDirection(args).catch((err) => {
     exitIfAwaiting(err);

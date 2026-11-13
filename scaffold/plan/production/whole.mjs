@@ -93,3 +93,5 @@ if (!verticalOf && !plan.video.intake?.cut_of) {
 const cutOf = plan.video.intake?.cut_of ? path.dirname(projectDir) : null;
 if (cutOf) { fs.copyFileSync(path.join(outDir, 'video.mp4'), path.join(cutOf, 'out', `${path.basename(projectDir)}.mp4`)); console.log(`copied to ${path.join(cutOf, 'out', `${path.basename(projectDir)}.mp4`)}`); }
 console.log(path.join(outDir, 'video.mp4'));
+// the review page opens itself from the Production page once this file exists: the agent must be listening by then
+if (!cutOf && !verticalOf) console.log(`Next (step 5): the review page is open or opening (node plan/review/serve.mjs ${projectDir} if not). Start now, in the background: node plan/wait.mjs ${projectDir} comments, and node plan/wait.mjs ${projectDir} approved. Answer each round of comments at once.`);

@@ -7,6 +7,7 @@
 // Nothing here is a finished frame: the user judges placement, hierarchy and copy.
 
 import { allocate, lengthRange } from './schema.mjs';
+import { FAVICON } from '../ui/favicon.mjs';
 
 const e = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (n) => (Math.round(n * 10) / 10).toFixed(1);
@@ -180,7 +181,7 @@ export function cellsHtml(d, video, c) {
 export function renderSketch(d, video, { letter = 'A', fontCss = '' } = {}) {
   setSketchFormat(video.format);
   const c = sketchColours(d);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sketch storyboard ${e(letter)} · ${e(video.product)}</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}<title>Sketch storyboard ${e(letter)} · ${e(video.product)}</title>
 <style>*{box-sizing:border-box}body{margin:0;background:#f6f3ec;color:#1d1c1a;font:14px/1.45 -apple-system,system-ui,sans-serif;padding:28px}header{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:18px;flex-wrap:wrap;gap:8px}h1{font-size:22px;margin:0}.dek{color:#6d6a63}.tag{font-size:12px;color:#6d6a63;border:1px solid #d9d3c5;border-radius:99px;padding:3px 10px}
 ${sketchCss(d, c, fontCss)}</style></head><body class="sk">
 <header><div><h1>${e(video.product)} — ${e(video.template)} video, sketch storyboard <span class="tag">direction ${e(letter)} · ${e(d.name)}</span></h1><div class="dek">${e(d.mood)} · ${e(d.idea)}</div></div><div class="tag">${e(video.format || '1920x1080')} · ${e(video.length_s)} s · ${d.moments.length} moments</div></header>

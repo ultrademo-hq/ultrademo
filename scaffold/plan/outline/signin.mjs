@@ -9,8 +9,11 @@
 // The password is read only here, typed only into the product's password field and never printed, logged or saved.
 import fs from 'node:fs';
 import path from 'node:path';
+import { userAgentFor } from '../browser.mjs';
 
 const AT_CAPTURE = { 'own-browser': 'you sign in through your own browser, so this screen is checked when the steps are captured', 'dedicated-profile': 'you sign in through a profile, so this screen is checked when the steps are captured', token: 'checked when the steps are captured, with the token or link in the env file', 'hosted-live-view': 'hosted app only' };
+// D-117: a local app's way in comes from its code, proposed to the user first, so it is checked at capture
+AT_CAPTURE['from-code'] = 'the way in comes from your code and is proposed to you first, so this screen is checked when the steps are captured';
 const BLOCKED = /verify you are human|are you a robot|captcha|access denied|unusual traffic|cf-chl|checking your browser/i;
 
 /** The demo account from the project's env file (only the three DEMO_ lines are read; values never leave this module). */
@@ -42,6 +45,11 @@ export async function testReach(plan, projectDir, { chromium = null, fetchImpl =
     for (const [m, i] of todo) out.results[i] = m.sign_in ? { state: 'at-capture', why: AT_CAPTURE[signPath] } : await fetchCheck(m, fetchImpl, timeoutMs);
     return out;
   }
+  // D-117: a local app with no sign-in opens every screen as it is
+  if (signPath === 'local-none') {
+    for (const [m, i] of todo) out.results[i] = await fetchCheck(m, fetchImpl, timeoutMs);
+    return out;
+  }
   if (signPath !== 'demo-account') {
     for (const [m, i] of todo) out.results[i] = m.sign_in ? { state: 'not-reached', why: 'behind a sign-in, but the brief says public site only: pick a sign-in on the brief' } : await fetchCheck(m, fetchImpl, timeoutMs);
     return out;
@@ -59,8 +67,8 @@ export async function testReach(plan, projectDir, { chromium = null, fetchImpl =
   fs.mkdirSync(shotDir, { recursive: true });
   const browser = await chromium.launch();
   try {
-    const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
-    const s = await signIn(page, account.signin_url || video.url, account, timeoutMs);
+    const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, userAgent: userAgentFor(browser) })).newPage();
+    const s = await signIn(page, account.signin_url || video.url, account, timeoutMs, [video.url, account.signin_url]);
     out.signed_in = s.ok; out.why = s.why;
     for (const [m, i] of todo) {
       if (!m.url) { out.results[i] = { state: 'not-placed', why: 'no address yet; the capture finds the page' }; continue; }
@@ -93,13 +101,67 @@ async function submit(page, field) {
 const IDENTITY = 'input[type="email"], input[autocomplete="username"], input[autocomplete="email"], input[name*="email" i], input[name*="user" i], input[name*="login" i], input[id*="email" i], input[id*="user" i]';
 
 /** Sign in through the form on `url`: the identity field, the password field (on the same step or the next), submit. */
-export async function signIn(page, url, account, timeoutMs = 20000) {
+// Domains under which many unrelated owners get their own name: two-part country domains and shared hosting. On these,
+// a site is the suffix plus one more label (acme.vercel.app, acme.co.uk), never the suffix alone, so another tenant's
+// subdomain is never taken for the product's own site. A short built-in list instead of a public-suffix dependency.
+export const SHARED_SUFFIXES = [
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk', 'me.uk', 'ltd.uk', 'plc.uk', 'com.au', 'net.au', 'org.au', 'co.nz', 'org.nz', 'co.jp', 'ne.jp', 'or.jp',
+  'com.br', 'com.sg', 'com.my', 'co.in', 'net.in', 'co.za', 'com.cn', 'com.hk', 'com.tw', 'co.kr', 'com.mx', 'com.tr', 'co.id', 'com.ph', 'com.vn', 'com.ar', 'co.il', 'com.ng', 'com.pk', 'co.th',
+  'vercel.app', 'netlify.app', 'github.io', 'gitlab.io', 'pages.dev', 'workers.dev', 'herokuapp.com', 'onrender.com', 'fly.dev', 'web.app', 'firebaseapp.com',
+  'azurewebsites.net', 'cloudfront.net', 'amplifyapp.com', 'railway.app', 'up.railway.app', 'glitch.me', 'replit.app', 'repl.co', 'surge.sh', 'webflow.io',
+  'framer.app', 'framer.website', 'wixsite.com', 'squarespace.com', 'myshopify.com', 'bubbleapps.io', 'lovable.app', 'supabase.co', 'appspot.com',
+  'ngrok.io', 'ngrok-free.app', 'trycloudflare.com', 'blogspot.com', 'wordpress.com', 'notion.site', 'carrd.co', 'softr.app', 'deno.dev', 'val.run',
+  // Hosted sign-in providers (Auth0, Clerk, Okta, Cognito) are left out on purpose: their flows can move between two
+  // hosts of the same customer (acme.accounts.dev, then acme.clerk.accounts.dev), which a stricter rule would refuse.
+];
+const SUFFIX_SET = new Set(SHARED_SUFFIXES);
+
+/** The site a page is on, for the sign-in's host check: its host name, and the registrable part of it (the last two
+ * labels, or one more under a shared suffix; an IP address or localhost as it is). */
+export function siteOf(u) {
+  let h = '';
+  try { h = new URL(String(u)).hostname.toLowerCase().replace(/\.$/, ''); } catch { return null; }
+  if (!h) return null;
+  const ip = /^[\d.]+$/.test(h) || h.includes(':') || h === 'localhost';
+  if (ip) return { host: h, base: h };
+  const labels = h.split('.');
+  // the longest shared suffix the host ends with decides how many labels the site keeps
+  let keep = 2;
+  for (let n = labels.length - 1; n >= 2; n--) if (SUFFIX_SET.has(labels.slice(-n).join('.'))) { keep = n + 1; break; }
+  return { host: h, base: labels.slice(-keep).join('.') };
+}
+/** D-107: the demo account's details are typed only on the product's own site: the host of its address or of
+ * DEMO_SIGNIN_URL, or a subdomain of either (app., auth., login.). A page that has moved anywhere else is refused. */
+export function onOwnSite(pageUrl, allowed) {
+  const here = siteOf(pageUrl);
+  if (!here) return false;
+  return allowed.map(siteOf).filter(Boolean).some((a) => here.host === a.host || here.host === a.base || here.host.endsWith('.' + a.base));
+}
+
+export async function signIn(page, url, account, timeoutMs = 20000, allowed = null) {
+  const own = (allowed && allowed.filter(Boolean).length ? allowed.filter(Boolean) : [url]);
+  const elsewhere = () => { let h = ''; try { h = new URL(page.url()).hostname; } catch {} return { ok: false, why: `the sign-in page is on ${h || 'another site'}, not your product's site, so the demo details were not typed there; if that is your real sign-in page, put its address in DEMO_SIGNIN_URL` }; };
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
     await page.waitForTimeout(800);
     if (BLOCKED.test(await page.content())) return { ok: false, why: 'the site blocked the automated browser; use your own browser or a dedicated profile on the brief' };
-    const id = page.locator(IDENTITY).first();
+    // a sign-in page drawn by script shows its form a moment after the page loads
+    await page.locator(IDENTITY).first().waitFor({ state: 'visible', timeout: Math.min(6000, timeoutMs) }).catch(() => {});
+    let id = page.locator(IDENTITY).first();
+    if (!(await id.count())) {
+      // a landing page with a Log in link (the form is one click further): follow it, read-only
+      const link = page.locator('a, button').filter({ hasText: /^\s*(log ?in|sign ?in)\s*$/i }).first();
+      if (await link.isVisible().catch(() => false)) {
+        await link.click();
+        await page.waitForLoadState('domcontentloaded', { timeout: timeoutMs }).catch(() => {});
+        await page.locator(IDENTITY).first().waitFor({ state: 'visible', timeout: Math.min(8000, timeoutMs) }).catch(() => {});
+        if (BLOCKED.test(await page.content())) return { ok: false, why: 'the site blocked the automated browser; use your own browser or a dedicated profile on the brief' };
+        id = page.locator(IDENTITY).first();
+      }
+    }
     if (!(await id.count())) return { ok: false, why: 'no sign-in form found at the sign-in address; set DEMO_SIGNIN_URL in the env file' };
+    // D-107: never type the demo details on a page that has left the product's own site (a redirect, a followed link)
+    if (!onOwnSite(page.url(), own)) return elsewhere();
     await id.fill(account.email);
     let pw = page.locator(PASSWORD).first();
     if (!(await pw.isVisible().catch(() => false))) {
@@ -109,6 +171,7 @@ export async function signIn(page, url, account, timeoutMs = 20000) {
       pw = page.locator(PASSWORD).first();
       if (!(await pw.isVisible().catch(() => false))) return { ok: false, why: 'the sign-in asked for something other than a password (a code, a link or single sign-on): use your own browser or a dedicated profile on the brief' };
     }
+    if (!onOwnSite(page.url(), own)) return elsewhere();
     await pw.fill(account.password);
     await submit(page, pw);
     await page.waitForLoadState('networkidle', { timeout: timeoutMs }).catch(() => {});

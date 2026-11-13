@@ -3,6 +3,7 @@
 // lessons from the comments (review/lessons.json). The user keeps the ones they want on the Delivery card or in the
 // dashboard; kept learnings live with the brand (brands/<slug>/learnings.json), each with its source, and can be
 // switched off, edited or removed. The direction step reads the ones that are on.
+import { localDay } from './day.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BRANDS_DIR, findBrandFor, brandFromVideo, saveBrandProfile, readBrandProfile } from './brands.mjs';
@@ -43,7 +44,7 @@ export function planLearnings(plan = {}, { voiceName = (id) => id } = {}) {
 export function proposeLearnings(projectDir, { voiceName, now = new Date() } = {}) {
   const plan = readJson(path.join(projectDir, 'plan.json'), {});
   const items = planLearnings(plan, { voiceName }).map((x) => ({ id: newId(), ...x }));
-  const rec = { from: `${videoTitle(plan.video)} · approved ${now.toISOString().slice(0, 10)}`, project: path.basename(projectDir), title: videoTitle(plan.video), at: now.toISOString(), status: 'open', items };
+  const rec = { from: `${videoTitle(plan.video)} · approved ${localDay(now)}`, project: path.basename(projectDir), title: videoTitle(plan.video), at: now.toISOString(), status: 'open', items };
   writeJson(proposalsFile(projectDir), rec);
   return readProposals(projectDir);
 }
@@ -81,7 +82,7 @@ export function keepLearnings(projectDir, picks = [], { dir = BRANDS_DIR, now = 
     const text = clean(p.text ?? item.text) || item.text;
     if (item.kind === 'Logo motion' && item.value) profile = { ...profile, logo_motion: item.value };
     if (item.kind === 'Facts') { profile = { ...profile, facts: item.facts || [] }; continue; }
-    kept.push({ id: newId(), kind: item.kind, text, from: `${prop.title} · ${now.toISOString().slice(0, 10)}`, project: prop.project, on: true, at: now.toISOString() });
+    kept.push({ id: newId(), kind: item.kind, text, from: `${prop.title} · ${localDay(now)}`, project: prop.project, on: true, at: now.toISOString() });
   }
   // saving again for the same video (Edit on the Delivery card) replaces what it kept before, instead of adding a second copy
   const all = listLearnings(brand.slug, dir).filter((l) => l.project !== prop.project);
@@ -107,7 +108,7 @@ export function updateLearning(slug, id, change = {}, dir = BRANDS_DIR) {
 }
 export function addLearning(slug, { kind, text }, dir = BRANDS_DIR, now = new Date()) {
   if (!readBrandProfile(slug, dir) || !clean(text)) return null;
-  const item = { id: newId(), kind: kindOf(kind), text: clean(text), from: `Added by you · ${now.toISOString().slice(0, 10)}`, on: true, at: now.toISOString() };
+  const item = { id: newId(), kind: kindOf(kind), text: clean(text), from: `Added by you · ${localDay(now)}`, on: true, at: now.toISOString() };
   writeLearnings(slug, [...listLearnings(slug, dir), item], dir);
   return item;
 }

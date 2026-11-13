@@ -4,24 +4,28 @@
 // marked spot, and are saved in <project>/review/comments.json with a readable review/comments.md beside it, so the
 // agent can read them and fix the scenes. A dependency-free local server, 127.0.0.1 only; writes are same-origin JSON under 200 KB.
 //   node plan/review/serve.mjs <project> [--port 4330]
+import { refuseForeignHost } from '../localhost.mjs';
 import http from 'node:http';
 import { spawnSync } from 'node:child_process';
 import { tokenEstimate } from '../production/progress.mjs';
 import { openInBrowser } from '../open.mjs';
-import { proposeLearnings, readProposals, keepLearnings } from '../learnings.mjs';
+import { proposeLearnings, readProposals, keepLearnings, videoTitle } from '../learnings.mjs';
 import { track, projectProps } from '../telemetry.mjs';
 import { cachedUpdate, localVersion } from '../updates.mjs';
 import { musicCredit } from '../production/audio.mjs';
 import { BRANDS_DIR, findBrandFor } from '../brands.mjs';
+import { notesRoutes } from '../notes.mjs';
 import { startNewVideo } from '../newvideo.mjs';
+import { nextQueued } from '../queue.mjs';
 import { refreshDashboard } from '../dashboard/build.mjs';
 import { findVoice } from '../../tts/catalogue.mjs';
-import { listenOnFree, recordPage } from '../pages.mjs';
+import { listenOnFree, recordPage, stageLinks, openPage } from '../pages.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sendUi } from '../intake/serve.mjs';
 import { renderReviewPage } from './page.mjs';
+import { transcriptText, captionFiles } from './transcript.mjs';
 
 const MAX_BODY = 200_000;
 const MAX_NOTES = 500;
@@ -158,19 +162,46 @@ function sendVideo(req, res, file) {
   fs.createReadStream(file, { start, end }).pipe(res);
 }
 
+/** D-102: the vertical version is missing from a landscape video (not asked for in the brief, or asked for and not built
+ * yet): { missing: 'vertical' | null, asked (it was in the brief), pending (requested from Delivery, not made yet) }. A
+ * vertical-only video has no landscape to lay out again from, so nothing is offered for it. */
+export function formatLater(projectDir) {
+  let video = {};
+  try { video = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8')).video || {}; } catch {}
+  const tall = /^(\d+)x(\d+)$/.exec(String(video.format || '1920x1080'));
+  const landscape = !tall || Number(tall[1]) >= Number(tall[2]);
+  const hasV = fs.existsSync(path.join(projectDir, 'out', 'video-vertical.mp4'));
+  const missing = landscape && !hasV && fs.existsSync(path.join(projectDir, 'out', 'video.mp4')) ? 'vertical' : null;
+  let req = null; try { req = JSON.parse(fs.readFileSync(path.join(projectDir, 'review', 'format-request.json'), 'utf8')); } catch {}
+  // D-116: a vertical version made after the video was approved: ready, not approved yet. The landscape approval stands
+  // until the landscape video is rendered again after it.
+  let ap = null; try { ap = JSON.parse(fs.readFileSync(path.join(projectDir, 'review', 'approved.json'), 'utf8')); } catch {}
+  const laterReady = Boolean(ap?.final && hasV && !ap.final_vertical);
+  let landscapeChanged = false;
+  try { landscapeChanged = Boolean(ap?.at) && fs.statSync(path.join(projectDir, 'out', ap.video || 'video.mp4')).mtimeMs > Date.parse(ap.at); } catch {}
+  return { missing, asked: (video.intake?.formats || []).includes('vertical'), pending: Boolean(missing && req?.format === missing), laterReady, landscapeChanged };
+}
+
 export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brandsDir = BRANDS_DIR }) {
   projectDir = path.resolve(projectDir);
   // the approved video (D-79 Delivery): a dated copy in out/final/ that later renders cannot overwrite
   const approvedFile = path.join(projectDir, 'review', 'approved.json');
   const approved = () => { try { const a = JSON.parse(fs.readFileSync(approvedFile, 'utf8')); return fs.existsSync(path.join(projectDir, 'out', 'final', a.final)) ? a : null; } catch { return null; } };
   const server = http.createServer(async (req, res) => {
+    if (refuseForeignHost(req, res)) return; // D-106: only requests addressed to this machine
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      // D-101: the notes that follow the video, and reopening an earlier step
+      if (url.pathname === '/api/notes' || url.pathname === '/api/reopen') { if (await notesRoutes(req, res, url, projectDir, { sendJson, readBody, sameOrigin, brandsDir: brandsDir })) return; }
       if (req.method === 'GET' && url.pathname === '/') {
         const videos = listVideos(projectDir);
-        const pick = videos.find((v) => v.name === url.searchParams.get('v')) || videos[0] || null;
-        return send(res, 200, renderReviewPage({ project: path.basename(projectDir), videos, video: pick, videoPath: pick ? path.join(projectDir, 'out', pick.name) : null, ...scenesOf(projectDir), tokens: tokenEstimate(projectDir), approved: approved(), offer: cachedUpdate().offer, version: localVersion(), view: url.searchParams.get('review') ? 'review' : 'auto', credit: (() => { try { return musicCredit(projectDir); } catch { return null; } })(), cuts: (() => { try { return JSON.parse(fs.readFileSync(path.join(projectDir, 'review', 'cuts.json'), 'utf8')).filter((c) => fs.existsSync(path.join(projectDir, 'out', 'final', c.final))); } catch { return []; } })(), thumbs: (() => { try { return fs.readdirSync(path.join(projectDir, 'out', 'thumbnails')).filter((f) => /^[a-z0-9-]+-thumbnail-\d+x\d+\.png$/.test(f)).sort(); } catch { return []; } })() }));
+        const later = formatLater(projectDir);
+        // D-116: a vertical version made after approval opens first, on the review page
+        const laterFirst = later.laterReady && !url.searchParams.get('delivery') && !url.searchParams.get('v');
+        const pick = videos.find((v) => v.name === url.searchParams.get('v')) || (laterFirst ? videos.find((v) => v.name === 'video-vertical.mp4') : null) || videos[0] || null;
+        return send(res, 200, renderReviewPage({ formatLater: later, project: path.basename(projectDir), videos, video: pick, videoPath: pick ? path.join(projectDir, 'out', pick.name) : null, ...scenesOf(projectDir), tokens: tokenEstimate(projectDir), approved: approved(), offer: cachedUpdate().offer, version: localVersion(), view: url.searchParams.get('review') || laterFirst ? 'review' : 'auto', nextUp: (() => { try { const v = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8')).video || {}; return nextQueued(path.dirname(projectDir), { brand: findBrandFor(v, brandsDir)?.slug || null, url: v.url || '' }); } catch { return null; } })(), transcript: { text: transcriptText(projectDir), ...Object.fromEntries(Object.entries(captionFiles(projectDir)).map(([k, v]) => [k, Boolean(v)])) }, credit: (() => { try { return musicCredit(projectDir); } catch { return null; } })(), cuts: (() => { try { return JSON.parse(fs.readFileSync(path.join(projectDir, 'review', 'cuts.json'), 'utf8')).filter((c) => fs.existsSync(path.join(projectDir, 'out', 'final', c.final))); } catch { return []; } })(), thumbs: (() => { try { return fs.readdirSync(path.join(projectDir, 'out', 'thumbnails')).filter((f) => /^[a-z0-9-]+-thumbnail-\d+x\d+\.png$/.test(f)).sort(); } catch { return []; } })() }));
       }
+      if (req.method === 'GET' && url.pathname === '/api/pages') return sendJson(res, 200, { ok: true, ...stageLinks(projectDir) });
       if (req.method === 'GET' && url.pathname.startsWith('/ui/')) return sendUi(res, url.pathname);
       if (req.method === 'GET' && url.pathname.startsWith('/video/')) {
         const name = decodeURIComponent(url.pathname.slice('/video/'.length));
@@ -185,6 +216,17 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
         const file = path.join(projectDir, 'out', 'thumbnails', name);
         if (!/^[a-z0-9-]+-thumbnail-\d+x\d+\.png$/.test(name) || !fs.existsSync(file)) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
         return send(res, 200, fs.readFileSync(file), 'image/png');
+      }
+      // the transcript (2026-11-11): the narration with the time each line starts, and the caption files when there are any
+      const tm = /^\/transcript\.(txt|srt|vtt)$/.exec(url.pathname);
+      if (req.method === 'GET' && tm) {
+        const base = path.basename(projectDir);
+        let body = null;
+        if (tm[1] === 'txt') { let title = ''; try { const v = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8')).video || {}; title = [v.product, videoTitle(v)].filter(Boolean).join(' · '); } catch {} body = transcriptText(projectDir, title || base) || null; }
+        else { const f = captionFiles(projectDir)[tm[1]]; body = f ? fs.readFileSync(f) : null; }
+        if (!body) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+        res.writeHead(200, { 'content-type': tm[1] === 'vtt' ? 'text/vtt; charset=utf-8' : 'text/plain; charset=utf-8', 'content-disposition': `attachment; filename="${base}-${tm[1] === 'txt' ? 'transcript.txt' : `captions.${tm[1]}`}"`, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return res.end(body);
       }
       if (req.method === 'GET' && url.pathname.startsWith('/final/')) {
         const name = decodeURIComponent(url.pathname.slice('/final/'.length));
@@ -211,7 +253,8 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
         const vfile = VIDEO_NAME.test(name) ? path.join(projectDir, 'out', name) : null;
         let working = false;
         if (sub) { try { working = mt(path.join(projectDir, 'production', 'loop-log.md')) > sub.at || fs.readdirSync(path.join(projectDir, 'production', 'scenes')).some((f) => mt(path.join(projectDir, 'production', 'scenes', f)) > sub.at); } catch {} }
-        return sendJson(res, 200, { ok: true, submitted: sub, working, video_mtime: vfile ? mt(vfile) : 0, thumb_mtime: thumbsMtime(projectDir) });
+        let thumbSub = null; try { thumbSub = JSON.parse(fs.readFileSync(path.join(projectDir, 'review', 'thumb-submitted.json'), 'utf8')); } catch {}
+        return sendJson(res, 200, { ok: true, submitted: sub, working, video_mtime: vfile ? mt(vfile) : 0, thumb_mtime: thumbsMtime(projectDir), thumb_submitted: thumbSub });
       }
       if (req.method === 'POST' && url.pathname === '/api/submit') {
         // the open comments go to Claude: the agent's `wait.mjs … comments` exits on this file
@@ -220,15 +263,26 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
         if (!VIDEO_NAME.test(name)) return sendJson(res, 400, { ok: false, error: 'which video?' });
         const all = readNotes(projectDir);
         const openOf = (k) => (all[k]?.comments || []).filter((n) => n.status !== 'done').length;
-        // D-92: the thumbnail's open comments go with the video's
-        const thumbOpen = openOf(THUMB_KEY);
-        const open = openOf(name) + thumbOpen;
+        // the thumbnail has its own send (/api/submit-thumbnail, 2026-11-11): a video round never waits on it
+        const open = openOf(name);
         if (!open) return sendJson(res, 400, { ok: false, error: 'no open comments to send' });
-        const info = { at: Date.now(), video: name, open, thumbnail: thumbOpen };
+        const info = { at: Date.now(), video: name, open, thumbnail: 0 };
         fs.mkdirSync(path.join(projectDir, 'review'), { recursive: true });
         fs.writeFileSync(path.join(projectDir, 'review', 'submitted.json'), JSON.stringify(info) + '\n');
         track('comments_sent', { video_type: projectProps(projectDir).video_type, comments: open });
-        console.log(`Comments sent to Claude: ${open} open on ${name}; read ${path.join(projectDir, 'review', 'comments.md')}`);
+        console.log(`Comments sent to the agent: ${open} open on ${name}; read ${path.join(projectDir, 'review', 'comments.md')}`);
+        return sendJson(res, 200, { ok: true, ...info });
+      }
+      // the thumbnail's open comments go to Claude on their own: the agent's `wait.mjs … comments` exits on this file,
+      // also when it is sent while Claude is still fixing the video (it stays pending until each listed comment is done)
+      if (req.method === 'POST' && url.pathname === '/api/submit-thumbnail') {
+        const ids = (readNotes(projectDir)[THUMB_KEY]?.comments || []).filter((n) => n.status !== 'done').map((n) => n.id);
+        if (!ids.length) return sendJson(res, 400, { ok: false, error: 'no open thumbnail comments to send' });
+        const info = { at: Date.now(), open: ids.length, ids };
+        fs.mkdirSync(path.join(projectDir, 'review'), { recursive: true });
+        fs.writeFileSync(path.join(projectDir, 'review', 'thumb-submitted.json'), JSON.stringify(info) + '\n');
+        track('comments_sent', { video_type: projectProps(projectDir).video_type, comments: ids.length, thumbnail: true });
+        console.log(`Thumbnail comments sent to the agent: ${ids.length} open; read the thumbnail section of ${path.join(projectDir, 'review', 'comments.md')}`);
         return sendJson(res, 200, { ok: true, ...info });
       }
       if (req.method === 'GET' && url.pathname === '/api/learnings') return sendJson(res, 200, { ok: true, proposals: readProposals(projectDir) });
@@ -241,9 +295,32 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
           return sendJson(res, 200, { ok: true, ...r });
         } catch (err) { return sendJson(res, 400, { ok: false, error: err.message }); }
       }
+      // D-102: a format the delivery lacks (the vertical version), asked for after approval; the agent makes it
+      if (req.method === 'GET' && url.pathname === '/api/format-request') return sendJson(res, 200, { ok: true, ...formatLater(projectDir) });
+      if (req.method === 'POST' && url.pathname === '/api/format-request') {
+        const st = formatLater(projectDir);
+        if (!st.missing) return sendJson(res, 400, { ok: false, error: 'This video already has every format.' });
+        fs.mkdirSync(path.join(projectDir, 'review'), { recursive: true });
+        fs.writeFileSync(path.join(projectDir, 'review', 'format-request.json'), JSON.stringify({ format: st.missing, at: new Date().toISOString() }, null, 1) + '\n');
+        console.log(`The ${st.missing} version was asked for from Delivery: node plan/production/scene.mjs vertical ${projectDir}, then build it by AGENT.md's Vertical section; the review page shows it beside the landscape video.`);
+        return sendJson(res, 200, { ok: true, ...formatLater(projectDir) });
+      }
       if (req.method === 'POST' && url.pathname === '/api/new-video') {
         try {
           let plan = {}; try { plan = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8')); } catch {}
+          // D-97: the oldest queued video for this product goes first; its brief page opens on Start, already filled
+          const nq = nextQueued(path.dirname(projectDir), { brand: findBrandFor(plan.video || {}, brandsDir)?.slug || null, url: plan.video?.url || '' });
+          if (nq) {
+            const { reopenPage } = await import('../pages.mjs');
+            const r = await reopenPage(nq.dir);
+            if (r?.url) {
+              const n = { project: nq.dir, url: r.url, open: r.url, queued: true, at: new Date().toISOString() };
+              fs.mkdirSync(path.join(projectDir, 'review'), { recursive: true });
+              fs.writeFileSync(path.join(projectDir, 'review', 'next.json'), JSON.stringify(n, null, 1) + '\n');
+              console.log(`Next in queue: ${nq.dir}. Its brief page: ${r.url} (open in the user's browser). Run node plan/wait.mjs ${nq.dir} task and node plan/wait.mjs ${nq.dir} brief in the background.`);
+              return sendJson(res, 200, { ok: true, url: r.url, project: nq.project, queued: true });
+            }
+          }
           const n = await startNewVideo({ projectsDir: path.dirname(projectDir), brand: findBrandFor(plan.video || {}, brandsDir), product: plan.video?.product, brandsDir });
           fs.mkdirSync(path.join(projectDir, 'review'), { recursive: true });
           fs.writeFileSync(path.join(projectDir, 'review', 'next.json'), JSON.stringify(n, null, 1) + '\n');
@@ -256,10 +333,14 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
         const name = String(body.video || '');
         if (!VIDEO_NAME.test(name) || !fs.existsSync(path.join(projectDir, 'out', name))) return sendJson(res, 400, { ok: false, error: 'no such video' });
         const day = new Date().toISOString().slice(0, 10);
+        // the final copies are named after the video's title (else the project), with the local date and time at the end
+        let vtitle = ''; try { vtitle = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8')).video?.intake?.title || ''; } catch {}
+        const n0 = new Date(), pad = (x) => String(x).padStart(2, '0');
+        const stamp = `${n0.getFullYear()}-${pad(n0.getMonth() + 1)}-${pad(n0.getDate())}-${pad(n0.getHours())}${pad(n0.getMinutes())}`;
+        const nameSlug = (String(vtitle || path.basename(projectDir)).toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80).replace(/-+$/, '')) || 'video';
         // D-82: a social cut's final copy (review/cuts.json); the video's approval finishes every cut too
         const approveCut = (cutName) => {
-          const slugC = path.basename(projectDir).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'video';
-          const finalC = `${slugC}-final-${day}-${cutName.replace(/\.mp4$/, '')}.mp4`;
+          const finalC = `${nameSlug}-${cutName.replace(/\.mp4$/, '').replace(/^cut-(\d+)$/, '$1s-cut')}-${stamp}.mp4`;
           fs.mkdirSync(path.join(projectDir, 'out', 'final'), { recursive: true });
           fs.copyFileSync(path.join(projectDir, 'out', cutName), path.join(projectDir, 'out', 'final', finalC));
           const cf = path.join(projectDir, 'review', 'cuts.json');
@@ -270,12 +351,32 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
           console.log(`Cut approved: ${path.join(projectDir, 'out', 'final', finalC)}`);
           return finalC;
         };
+        // D-116: the vertical version made after approval is approved on its own; the landscape approval stands
+        if (body.only === 'vertical') {
+          const later = formatLater(projectDir);
+          const a = approved();
+          if (!a || !later.laterReady || name !== 'video-vertical.mp4') return sendJson(res, 400, { ok: false, error: 'There is no vertical version waiting for approval.' });
+          if (later.landscapeChanged) return sendJson(res, 409, { ok: false, error: 'The landscape video changed after it was approved: approve both again.' });
+          const o = (n) => path.join(projectDir, 'out', n);
+          const finalVertical = `${nameSlug}-vertical-${stamp}.mp4`;
+          fs.mkdirSync(path.join(projectDir, 'out', 'final'), { recursive: true });
+          if (a.video && a.video !== 'video.mp4' && fs.existsSync(o(a.video))) {
+            const mux = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', o(name), '-i', o(a.video), '-map', '0:v', '-map', '1:a?', '-c', 'copy', '-shortest', '-movflags', '+faststart', path.join(projectDir, 'out', 'final', finalVertical)], { encoding: 'utf8' });
+            if (mux.status !== 0) return sendJson(res, 500, { ok: false, error: `Could not give the vertical video the approved soundtrack: ${(mux.stderr || '').slice(0, 300)}` });
+          } else fs.copyFileSync(o(name), path.join(projectDir, 'out', 'final', finalVertical));
+          const openV = (readNotes(projectDir)[name]?.comments || []).filter((n) => n.status !== 'done').length;
+          const info = { ...a, videos: [a.video || 'video.mp4', name], final_vertical: finalVertical, vertical_at: new Date().toISOString(), open_comments: (a.open_comments || 0) + openV };
+          fs.writeFileSync(approvedFile, JSON.stringify(info, null, 1) + '\n');
+          refreshDashboard(projectDir);
+          track('approved', { ...projectProps(projectDir), cut: false, vertical_later: true });
+          console.log(`Vertical version approved: ${path.join(projectDir, 'out', 'final', finalVertical)}${openV ? ` (${openV} comment${openV === 1 ? '' : 's'} left open)` : ''}.`);
+          return sendJson(res, 200, { ok: true, ...info });
+        }
         if (/^cut-\d+\.mp4$/.test(name)) {
           const finalC = approveCut(name);
           track('approved', { ...projectProps(projectDir), cut: true });
           return sendJson(res, 200, { ok: true, cut: true, video: name, final: finalC });
         }
-        const slug = path.basename(projectDir).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'video';
         // D-82: with a vertical version, one approval finishes both formats. Approving the vertical approves video.mp4 beside it;
         // approving any landscape version (video.mp4, or another voice such as video-killian.mp4) finishes the vertical too,
         // and the vertical takes that version's soundtrack (it was rendered under video.mp4's), so the two finals match.
@@ -283,8 +384,8 @@ export function startServer({ projectDir, port = 4330, host = '127.0.0.1', brand
         const main = name === V ? 'video.mp4' : name;
         const both = fs.existsSync(out(V)) && fs.existsSync(out(main));
         if (name === V && !both) return sendJson(res, 400, { ok: false, error: 'the vertical version needs its landscape video.mp4 beside it' });
-        const final = `${slug}-final-${day}.mp4`;
-        const finalVertical = both ? `${slug}-final-${day}-vertical.mp4` : null;
+        const final = `${nameSlug}-${stamp}.mp4`;
+        const finalVertical = both ? `${nameSlug}-vertical-${stamp}.mp4` : null;
         fs.mkdirSync(path.join(projectDir, 'out', 'final'), { recursive: true });
         if (finalVertical && main !== 'video.mp4') {
           const mux = spawnSync('ffmpeg', ['-v', 'error', '-y', '-i', out(V), '-i', out(main), '-map', '0:v', '-map', '1:a?', '-c', 'copy', '-shortest', '-movflags', '+faststart', path.join(projectDir, 'out', 'final', finalVertical)], { encoding: 'utf8' });
@@ -347,9 +448,9 @@ if (isMain) {
   const dir = args.find((a) => !a.startsWith('--'));
   if (!dir || !fs.existsSync(dir)) { console.error('usage: node plan/review/serve.mjs <project> [--port 4330]'); process.exit(1); }
   const pi = args.indexOf('--port');
-  listenOnFree((p) => startServer({ projectDir: dir, port: p }), pi >= 0 ? Number(args[pi + 1]) : 4330).then((s) => {
+  listenOnFree((p) => startServer({ projectDir: dir, port: p }), pi >= 0 ? Number(args[pi + 1]) : 4330).then(async (s) => {
     recordPage(path.resolve(dir), 'review', s.url);
-    const opened = openInBrowser(s.url);
-    console.log(`review page: ${s.url}  (${opened ? 'opened in your browser; ' : ''}comments go to ${path.join(path.resolve(dir), 'review', 'comments.md')}; Ctrl+C to stop)`);
+    const how = await openPage(path.resolve(dir), 'review', s.url);
+    console.log(`review page: ${s.url}  (${how ? `${how}; ` : ''}comments go to ${path.join(path.resolve(dir), 'review', 'comments.md')}; Ctrl+C to stop)`);
   }).catch((e) => { console.error(`Stopped: ${e.message}`); process.exit(1); });
 }

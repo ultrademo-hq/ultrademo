@@ -64,21 +64,6 @@
    "gain_db": -6
   },
   {
-   "file": "loyalty-freak-music-high-technologic-beat-explosion.mp3",
-   "title": "High Technologic Beat Explosion",
-   "set": "energetic",
-   "usable_from_s": 8,
-   "bpm": 178.5,
-   "beat_strength": 0.42,
-   "mood": [
-    "electro",
-    "driving",
-    "building",
-    "modern"
-   ],
-   "gain_db": 4.2
-  },
-  {
    "file": "loyalty-freak-music-cant-stop-my-feet.mp3",
    "title": "Can't Stop My Feet",
    "set": "energetic",
@@ -92,6 +77,21 @@
     "upbeat"
    ],
    "gain_db": -1
+  },
+  {
+   "file": "loyalty-freak-music-high-technologic-beat-explosion.mp3",
+   "title": "High Technologic Beat Explosion",
+   "set": "energetic",
+   "usable_from_s": 8,
+   "bpm": 178.5,
+   "beat_strength": 0.42,
+   "mood": [
+    "electro",
+    "driving",
+    "building",
+    "modern"
+   ],
+   "gain_db": 4.2
   },
   {
    "file": "seth-makes-sounds-free-uplifting-music.mp3",

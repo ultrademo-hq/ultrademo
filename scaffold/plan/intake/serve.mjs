@@ -11,6 +11,11 @@
 // Everything a user sees uses the plain words of D-55 and D-64. The file on
 // disk keeps the working field names of plan/schema.mjs.
 
+import { readPictures, setPictureUse, mergePictures, withPictureSources } from '../pictures.mjs';
+import { localDay } from '../day.mjs';
+import { refuseForeignHost } from '../localhost.mjs';
+import { checkFolder, startCommand, localAddress, answers, writeStartTask, startState } from '../local.mjs';
+import { readLocalPages, discoverPages, outlinePages, homeShot } from '../localpages.mjs';
 import fs from 'node:fs';
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
@@ -19,13 +24,32 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { VideoSchema, countWords, TEMPLATES } from '../schema.mjs';
 import { validatePlan } from '../validate.mjs';
 import { openInBrowser } from '../open.mjs';
-import { listenOnFree, recordPage, pagesOf } from '../pages.mjs';
+import { listenOnFree, recordPage, pagesOf, stageLinks, markFollowing } from '../pages.mjs';
 import { refreshDashboard } from '../dashboard/build.mjs';
 import { track, projectProps } from '../telemetry.mjs';
-import { BRANDS_DIR, listBrands, findBrandFor, brandFromVideo, brandChanges, saveBrandProfile, brandForBrief } from '../brands.mjs';
+import { BRANDS_DIR, listBrands, findBrandFor, brandFromVideo, brandChanges, saveBrandProfile, brandForBrief, brandFromProject, brandSlug, readBrandProfile } from '../brands.mjs';
 import { renderIntakePage, renderSavedPage, TEMPLATE_META, LABELS, ASSETS_DIR, musicTracks } from './page.mjs';
 import { CAPTION_CHOICES, defaultCaptionsFor } from '../captions/styles.mjs';
 import { previewFonts } from '../captions/captions.mjs';
+import { notesRoutes, ensureNote } from '../notes.mjs';
+import { openFonts } from '../direction/frames.mjs';
+
+// the open fonts the video can use, one preview face per family (the brief's font picker); file names map to their files
+let OPEN_FONTS = null;
+function openFontList() {
+  if (OPEN_FONTS) return OPEN_FONTS;
+  const files = new Map(), list = [];
+  for (const f of openFonts()) {
+    const pick = [600, 700, 500, 400].map((w) => f.faces.find((x) => Number(x.weight) === w && x.style !== 'italic')).find(Boolean) || f.faces[0];
+    if (!pick) continue;
+    const name = path.basename(pick.file);
+    if (!/\.woff2$/.test(name)) continue;
+    files.set(name, pick.file);
+    list.push({ family: f.family, file: name, weight: Number(pick.weight) || 400 });
+  }
+  OPEN_FONTS = { files, list: list.sort((a, b) => a.family.localeCompare(b.family)) };
+  return OPEN_FONTS;
+}
 import { findVoice, defaultVoice, elevenlabsReady, voiceOptions, SAMPLES_DIR } from '../../tts/catalogue.mjs';
 
 const MAX_BODY = 1_000_000;        // bytes a POST may carry
@@ -36,7 +60,7 @@ const MAX_IMAGE = 25_000_000;      // bytes an uploaded screenshot may carry
 export const OWN_TRACK = /^assets\/music\/own-[a-z0-9-]{1,60}\.(mp3|wav|m4a|ogg|aac|flac)$/;
 // screens the user gives (HTML mockups of features not live yet, screenshots): only paths the upload makes are kept
 export const SOURCE_FILE = /^assets\/sources\/[a-z0-9-]{1,64}\.(html|png|jpg|webp)$/;
-const SCREEN_FROM = ['live', 'mockups', 'screenshots', 'figma'];
+const SCREEN_FROM = ['live', 'local', 'code', 'mockups', 'screenshots', 'figma'];
 // D-77, D-88: the five video types; each maps to the story spine the later steps know (template)
 export const VIDEO_TYPES = ['launch', 'explainer', 'spotlight', 'ad', 'tutorial'];
 export function templateFor(type, scope, length_s) {
@@ -70,12 +94,32 @@ const WEBSITE_SIGN_IN_NOTE = 'Product type is website only: the video is made fr
 
 const DEFAULT_NOTE = 'Unsure at intake; the direction step proposes it.';
 
+// D-96: what the video is for (chips and the user's own words) and the overview paragraph, as saved with the brief
+const PURPOSES = ['Landing page', 'Launch post', 'Product Hunt', 'Onboarding', 'Help centre', 'Sales demos', 'Paid ads', 'Social posts'];
+function purposeOf(p) {
+  if (!p || typeof p !== 'object') return null;
+  const chips = (Array.isArray(p.chips) ? p.chips : []).filter((c) => PURPOSES.includes(c));
+  const text = typeof p.text === 'string' ? p.text.trim().slice(0, 300) : '';
+  return chips.length || text ? { chips, ...(text ? { text } : {}) } : null;
+}
+const OVERVIEW_FIELD_IDS = ['length', 'purpose', 'viewer', 'pain', 'cover', 'aha', 'cta'];
+function overviewOf(o) {
+  if (!o || typeof o !== 'object' || !Array.isArray(o.segments)) return null;
+  const segments = o.segments.slice(0, 60).map((g) => ({ text: String(g?.text ?? '').slice(0, 600), field: OVERVIEW_FIELD_IDS.includes(g?.field) ? g.field : null })).filter((g) => g.text);
+  if (!segments.length) return null;
+  const sources = {};
+  for (const [k, v] of Object.entries(o.sources && typeof o.sources === 'object' ? o.sources : {})) if (/^[a-z_]{1,24}$/.test(k) && ['request', 'site', 'pick', 'check', 'you', 'done'].includes(v)) sources[k] = v;
+  return { text: segments.map((g) => g.text).join('').replace(/\s+/g, ' ').trim().slice(0, 4000), segments, sources, drafted: o.drafted === true };
+}
+// a story field or the length left empty is proposed too, but the brief does not come back with it ticked Unsure
+const EMPTY_NOTE = 'Left empty at intake; the direction step proposes it.';
+
 export function slug(s) {
   return String(s ?? '').toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'product';
 }
 
 export function todayISO(d = new Date()) {
-  return d.toISOString().slice(0, 10);
+  return localDay(d);
 }
 
 /** `<product>-<template>-<date>`, with "video" standing in for an Unsure template. */
@@ -104,7 +148,8 @@ export function buildVideo(brief, opts = {}) {
   // the story and the call to action are notes the direction step builds on: left empty, they are proposed (as if Unsure)
   const PROPOSED_WHEN_EMPTY = ['product', 'viewer', 'claim', 'pain_point', 'proof_moment', 'cta'];
   const text = (field, raw) => {
-    if (isUnsure(field) || (PROPOSED_WHEN_EMPTY.includes(field) && !str(raw))) { unsure[field] = note(field); return null; }
+    if (isUnsure(field)) { unsure[field] = note(field); return null; }
+    if (PROPOSED_WHEN_EMPTY.includes(field) && !str(raw)) { unsure[field] = EMPTY_NOTE; return null; }
     return str(raw);
   };
   const choice = (field, raw, allowed) => {
@@ -120,7 +165,7 @@ export function buildVideo(brief, opts = {}) {
     const n = b.length_s === '' || b.length_s == null ? NaN : Number(b.length_s);
     length_s = Number.isFinite(n) && n > 0 ? n : null;
     // left empty (no video type picked yet), the length is proposed like any other empty field
-    if (length_s === null) unsure.length_s = note('length_s');
+    if (length_s === null) unsure.length_s = EMPTY_NOTE;
   }
   // a video type (D-77) sets the spine; a brief from before D-77 still sends the template itself
   const typeGiven = VIDEO_TYPES.includes(str(b.video_type)) ? templateFor(str(b.video_type), str(b.scope), length_s) : null;
@@ -161,18 +206,23 @@ export function buildVideo(brief, opts = {}) {
   const formats = { landscape: ['landscape'], vertical: ['vertical'], both: ['landscape', 'vertical'] }[str(b.formats)] || null;
   const product_type = isUnsure('product_type') || b.product_type === 'unsure' || !PRODUCT_TYPES.includes(str(b.product_type)) ? null : str(b.product_type);
   if (product_type === null && (isUnsure('product_type') || b.product_type === 'unsure')) unsure.product_type = note('product_type');
+  // D-100: the surfaces the video shows (any mix); product_type stays the main app, for everything that reads it
+  const surfaces = [...new Set((Array.isArray(b.surfaces) ? b.surfaces : []).map(str))].filter((x) => ['website', 'web-app', 'mobile-app'].includes(x));
   const look = isUnsure('look') ? null : { words: str(b.look?.words ?? b.look), chips: list(b.look?.chips ?? []) };
   if (isUnsure('look')) unsure.look = note('look');
   const footageIn = b.footage && typeof b.footage === 'object' ? b.footage : {};
   const footage = isUnsure('footage') || footageIn.have === 'unsure' ? null : {
     have: ['none', 'upload', 'existing', 'record'].includes(str(footageIn.have)) ? str(footageIn.have) : 'none',
     files: list(footageIn.files),
-    links: list(footageIn.links),
-    channel: str(footageIn.channel),
+    // D-108: YouTube video links, at most two (a channel address is no longer asked); or the downloaded copies
+    links: list(footageIn.links).filter((u) => /^https:\/\/(www\.|m\.)?(youtube\.com\/(watch\?|shorts\/|live\/)|youtu\.be\/)/i.test(u)).slice(0, 2),
+    // the user's call on YouTube's terms: Ultrademo downloads the links, or the user downloads them first and gives the files
+    youtube: footageIn.youtube === 'download' ? 'download' : 'own-file',
+    downloaded: list(footageIn.downloaded),
   };
   if (footage === null) unsure.footage = note('footage');
   const signIn = b.sign_in && typeof b.sign_in === 'object' ? b.sign_in : {};
-  const SIGN_IN_PATHS = ['public', 'own-browser', 'dedicated-profile', 'hosted-live-view', 'token', 'demo-account'];
+  const SIGN_IN_PATHS = ['public', 'own-browser', 'dedicated-profile', 'hosted-live-view', 'token', 'demo-account', 'local-none', 'from-code'];
   const website = product_type === 'website';
   // a website-only product has nothing to sign into: an Unsure or missing path defaults to public, with a note
   const signInUnsure = (isUnsure('sign_in') || signIn.path === 'unsure') && !website;
@@ -208,7 +258,15 @@ export function buildVideo(brief, opts = {}) {
     title: str(u.title).replace(/\s+/g, ' ').slice(0, 120) || path.basename(str(u.path)),
   }));
   const figmaUrl = /^https:\/\/(www\.)?figma\.com\//.test(str(screensIn.figma_url)) ? str(screensIn.figma_url).slice(0, 500) : '';
-  const screens = { from: list(screensIn.from).filter((x) => SCREEN_FROM.includes(x)), uploads, ...(figmaUrl ? { figma_url: figmaUrl } : {}) };
+  // D-117: the product on this computer: its code folder (read only), the command the AI session starts it with, its address
+  const localIn = b.local && typeof b.local === 'object' && b.local.on ? b.local : null;
+  const localFolder = localIn ? checkFolder(localIn.folder) : null;
+  // D-117 (option A): Start says whether a public site is read; with 'none' the user describes the product themselves
+  const siteNone = str(b.site_mode) === 'none';
+  const publicUrl = siteNone ? '' : str(b.url);
+  const wants = str(localIn?.wants).slice(0, 1500);
+  const local = localFolder?.ok ? { folder: localFolder.folder, ...(startCommand(localIn.command) ? { command: startCommand(localIn.command) } : {}), ...(localAddress(localIn.address) ? { address: localAddress(localIn.address) } : {}), public: Boolean(publicUrl), ...(wants ? { wants } : {}) } : null;
+  const screens = { from: list(screensIn.from).filter((x) => SCREEN_FROM.includes(x)).filter((x) => (x === 'local' ? Boolean(local?.address) : x === 'code' ? Boolean(local) : true)), uploads, ...(figmaUrl ? { figma_url: figmaUrl } : {}) };
   if (!screens.from.length) screens.from = uploads.length ? [] : ['live'];
   const slugOf = (p) => path.basename(p, path.extname(p));
   const uploadSources = uploads.flatMap((u) => u.kind === 'mockup'
@@ -249,7 +307,8 @@ export function buildVideo(brief, opts = {}) {
 
   const video = {
     product,
-    url: str(b.url),
+    // with no public site yet, the local address stands in (never shown on screen, D-117)
+    url: publicUrl || local?.address || '',
     template,
     viewer: text('viewer', b.viewer),
     claim: text('claim', b.claim),
@@ -274,11 +333,15 @@ export function buildVideo(brief, opts = {}) {
       ...(str(b.title) ? { title: str(b.title).slice(0, 120) } : {}),
       project_name,
       product_type,
+      ...(surfaces.length ? { surfaces } : {}),
+      ...(['chat', 'queue', 'dashboard'].includes(str(b.started_from)) ? { started_from: str(b.started_from) } : {}),
       ...(voice ? { voice } : {}),
       music,
       look,
       footage,
       screens,
+      ...(local ? { local } : {}),
+      ...(siteNone ? { site_read: 'none' } : {}),
       ...(video_type ? { video_type, scope, ...(feature ? { feature } : {}) } : {}),
       ...(tutorial ? { tutorial } : {}),
       ...(motion_between ? { motion_between } : {}),
@@ -290,6 +353,9 @@ export function buildVideo(brief, opts = {}) {
       ...(formats ? { formats } : {}),
       ...(['15', '30'].includes(str(b.cut)) ? { cut: Number(b.cut) } : {}),
       ...(str(b.notes) ? { notes: str(b.notes).slice(0, 2000) } : {}),
+      ...(str(b.cover) ? { cover: str(b.cover).slice(0, 1200) } : {}),
+      ...(purposeOf(b.purpose) ? { purpose: purposeOf(b.purpose) } : {}),
+      ...(overviewOf(b.overview) ? { overview: overviewOf(b.overview) } : {}),
       sign_in,
       site,
       unsure,
@@ -335,7 +401,7 @@ export function validateVideo(video) {
     }
   }
   if (video.intake?.music?.own && !video.intake.music.own.licensed) problems.push({ field: 'music', what: 'Your own track needs your licence confirmed', fix: 'tick that your licence covers commercial videos, or pick a track from the library' });
-  if (!video.url) problems.push({ field: 'url', what: `${LABELS.url} is empty`, fix: 'the product address is the one thing the page needs' });
+  if (!video.url && video.intake?.site_read !== 'none') problems.push({ field: 'url', what: `${LABELS.url} is empty`, fix: 'give the address, or pick No site to read on Start' });
   if (video.template === 'talking-head-recut' && (!video.intake?.footage || video.intake.footage.have === 'none')) {
     problems.push({ field: 'footage', what: 'The Talking-head recut needs presenter footage from you', fix: 'choose where the files are, the published videos, or "I\'ll record some first"' });
   }
@@ -399,6 +465,13 @@ export function writePlan(projectDir, plan) {
 export function saveBrief(projectDir, brief, opts = {}) {
   const { plan: existing } = readPlan(projectDir);
   const video = buildVideo(brief, { existingVideo: existing?.video, now: opts.now });
+  video.sources = withPictureSources(projectDir, video.sources);
+  // D-117: the ticked pages of the Local App, by route, for the outline (pages without a picture included)
+  if (video.intake?.local) { const routes = outlinePages(projectDir); if (routes.length) video.intake.local.pages = routes; else delete video.intake.local.pages; }
+  // "Save, keep the current outline" on a reopened brief: the outline (and what later steps added) is carried over
+  if (opts.keepOutline && existing?.video?.intake?.outline) {
+    for (const k of ['outline', 'learnings', 'proposed']) if (existing.video.intake[k] !== undefined) video.intake[k] = existing.video.intake[k];
+  }
   const check = validateVideo(video);
   if (!check.ok) return { ok: false, problems: check.problems, video };
   const merged = mergePlan(existing, video);
@@ -535,6 +608,29 @@ async function saveOwnTrack(projectDir, req, name) {
   }
 }
 
+/** The user's own track by its path on this computer (2026-11-13: a local file, no links): an absolute path to a
+ * regular file of at most 60 MB with an audio extension, streamed through the same checks as an upload and copied into
+ * the project. The original is only read. */
+async function saveOwnTrackPath(projectDir, raw) {
+  let p = String(raw || '').trim().replace(/^["']|["']$/g, '');
+  if (p.startsWith('~/')) p = path.join(process.env.HOME || '', p.slice(2));
+  if (!p || !path.isAbsolute(p)) return { ok: false, error: 'Give the full path to the file, e.g. ~/Music/track.mp3.' };
+  let st = null; try { st = fs.statSync(p); } catch {}
+  if (!st || !st.isFile()) return { ok: false, error: 'No file at that path.' };
+  if (st.size > MAX_TRACK) return { ok: false, error: 'The file is over 60 MB.' };
+  return saveOwnTrack(projectDir, fs.createReadStream(p), path.basename(p));
+}
+
+/** Another saved brand that a typed name would land on (the same slug), when it is not this video's own saved brand. */
+function brandClash(name, own, brandsDir) {
+  const n = String(name || '').trim();
+  if (!n) return null;
+  const slug = brandSlug(n);
+  if (own && own.slug === slug) return null;
+  const p = readBrandProfile(slug, brandsDir);
+  return p ? { slug, name: p.name || n } : null;
+}
+
 // ---- the brand (logo, colours, fonts), read from the site's home page in a real browser and kept under assets/brand/
 export const BRAND_LOGO = /^assets\/brand\/logo(-own)?\.(svg|png|jpg|webp)$/;
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -569,6 +665,8 @@ export async function readBrand(projectDir, url) {
   const { readSite } = await import('../direction/scout.mjs');
   const tmp = path.join(projectDir, 'intake-read');
   const r = await readSite({ url, outDir: tmp, maxPages: 1, log: () => {} });
+  // D-113: the pictures on the home page join the project's set (ticked on the brief's screens step)
+  try { mergePictures(projectDir, path.join(tmp, 'scout'), 'brief'); } catch {}
   let logo = null, svg = '';
   if (r.logo) {
     const ext = path.extname(r.logo).slice(1);
@@ -611,6 +709,20 @@ async function saveLogo(projectDir, req, name) {
 /** How far the direction step has got since the brief was saved, from the files it writes (newer than the save):
  * started (anything in tasks/, scout/ or direction/), the site read (scout/report.json), the brand read
  * (direction/brand-read.json), the directions (direction/proposals.json with directions). The page polls it. */
+/** The outline step after a brief save (D-91), from the files it writes: the task, the outline in plan.json, the sign-in
+ * test and the outline page's address. */
+export function outlineProgress(projectDir, savedAt) {
+  const after = (iso) => { const t = Date.parse(iso || ''); return Number.isFinite(t) && t >= savedAt - 1000; };
+  const newer = (rel) => { try { return fs.statSync(path.join(projectDir, rel)).mtimeMs >= savedAt - 1000; } catch { return false; } };
+  let o = null;
+  try { o = readPlan(projectDir).plan?.video?.intake?.outline ?? null; } catch { o = null; }
+  const outline = !!o && (after(o.proposed_at) || after(o.confirmed_at));
+  const reach = !!o?.signin && after(o.signin.tested_at);
+  const page = pagesOf(projectDir).outline;
+  const pageUp = !!page?.url && after(page.at);
+  return { saved_at: savedAt, started: newer('tasks/outline.task.md') || outline, outline, reach: reach || pageUp, outline_url: pageUp ? page.url : null, confirmed: o?.status === 'confirmed' && after(o.confirmed_at) };
+}
+
 export function directionProgress(projectDir, savedAt) {
   const newer = (rel) => { try { return fs.statSync(path.join(projectDir, rel)).mtimeMs >= savedAt - 1000; } catch { return false; } };
   const anyNewer = (dir) => { try { return fs.readdirSync(path.join(projectDir, dir)).some((f) => newer(path.join(dir, f))); } catch { return false; } };
@@ -794,6 +906,7 @@ function sameOrigin(req) {
  * @param {{ projectDir: string, port?: number, host?: string, fetchImpl?: typeof fetch, now?: () => Date }} opts
  */
 export function startServer(opts) {
+  let localPagesBusy = false;
   const projectDir = path.resolve(opts.projectDir);
   const host = opts.host ?? '127.0.0.1';
   const brandsDir = opts.brandsDir ?? BRANDS_DIR;
@@ -805,19 +918,36 @@ export function startServer(opts) {
     return { status: changes.length ? 'changed' : 'same', name: saved.name, slug: saved.slug, changes };
   };
   const server = http.createServer(async (req, res) => {
+    if (refuseForeignHost(req, res)) return; // D-106: only requests addressed to this machine
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      // D-101: the notes that follow the video, and reopening an earlier step
+      if (url.pathname === '/api/notes' || url.pathname === '/api/reopen') { if (await notesRoutes(req, res, url, projectDir, { sendJson, readBody, sameOrigin, brandsDir: brandsDir })) return; }
       if (req.method === 'GET' && url.pathname === '/') {
         let prefill = null;
         try { prefill = readPlan(projectDir).plan?.video ?? null; } catch { prefill = null; }
+        // brief-seed.json: what the user already said in the chat, filled in on a fresh brief (the agent writes it)
+        let seed = null;
+        if (!prefill) { try { seed = JSON.parse(fs.readFileSync(path.join(projectDir, 'brief-seed.json'), 'utf8')); } catch { seed = null; } }
+        // a queued video whose brand was never saved: the brand of the brief it was queued from (D-97)
+        if (seed && !seed.brand && seed.brand_from) { try { seed.brand_data = brandFromProject(seed.brand_from, projectDir); } catch { seed.brand_data = null; } }
         const elevenlabs = opts.elevenlabs ?? elevenlabsReady();
         const brands = listBrands(brandsDir).map((b) => ({ slug: b.slug, name: b.name, domain: b.domain }));
-        return send(res, 200, renderIntakePage({ prefill, projectDir, today: todayISO(opts.now?.()), elevenlabs, voices: voiceOptions({ elevenlabs }), brands }));
+        return send(res, 200, renderIntakePage({ prefill, seed, projectDir, today: todayISO(opts.now?.()), elevenlabs, voices: voiceOptions({ elevenlabs }), brands, fonts: openFontList().list }));
       }
+      if (req.method === 'GET' && url.pathname === '/api/pages') return sendJson(res, 200, { ok: true, ...stageLinks(projectDir) });
       if (req.method === 'GET' && url.pathname.startsWith('/assets/')) return sendAsset(res, url.pathname);
       if (req.method === 'GET' && url.pathname.startsWith('/ui/')) return sendUi(res, url.pathname);
       if (req.method === 'GET' && url.pathname.startsWith('/voice-samples/')) return sendSample(res, url.pathname);
       if (req.method === 'GET' && url.pathname.startsWith('/music-samples/')) return sendSample(res, url.pathname, MUSIC_SAMPLES_DIR, '/music-samples/');
+      if (req.method === 'GET' && url.pathname.startsWith('/open-fonts/')) {
+        // the font picker's previews: only the listed files, by their exact name
+        const name = decodeURIComponent(url.pathname.slice('/open-fonts/'.length));
+        const file = openFontList().files.get(name);
+        if (!file || !fs.existsSync(file)) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+        res.writeHead(200, { 'content-type': 'font/woff2', 'cache-control': 'max-age=86400', 'x-content-type-options': 'nosniff' });
+        return void fs.createReadStream(file).pipe(res);
+      }
       if (req.method === 'GET' && url.pathname.startsWith('/caption-fonts/')) {
         // D-94: only the font files the caption styles use, by their exact name
         const name = decodeURIComponent(url.pathname.slice('/caption-fonts/'.length));
@@ -844,18 +974,85 @@ export function startServer(opts) {
         }
         return sendJson(res, 200, { ok: true, ...demoAccountState(projectDir) });
       }
+      // D-117: the product on this computer. The page never runs anything: the start is a task for the AI session
+      if (req.method === 'POST' && url.pathname === '/api/local-check') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const f = checkFolder(body.folder);
+        return sendJson(res, 200, f.ok ? { ...f, up: f.address ? (await answers(f.address)).up : false } : f);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/local-start') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const addr = localAddress(body.address);
+        if (addr && (await answers(addr)).up) return sendJson(res, 200, { ok: true, state: 'done', up: true, address: addr, started: false });
+        const t = writeStartTask(projectDir, { folder: body.folder, command: body.command, address: body.address });
+        return sendJson(res, t.ok ? 200 : 400, t.ok ? { ok: true, state: 'waiting', address: t.address } : t);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/local-start') {
+        const addr = localAddress(url.searchParams.get('address'));
+        const st = startState(projectDir);
+        const up = addr ? (await answers(addr)).up : false;
+        return sendJson(res, 200, { ok: true, ...st, up });
+      }
+      // D-117: the Local App's pages, found from its links and its code; Ultrademo picks from them. The brief shows the
+      // count and the home page's picture, to confirm it is the right app
+      const pagesView = () => { const st = readLocalPages(projectDir); const h = homeShot(projectDir); return { address: st.address, count: st.pages.length, home: h ? { id: h.id, title: h.title || '', route: h.route } : null }; };
+      if (req.method === 'GET' && url.pathname === '/api/local-pages') return sendJson(res, 200, { ok: true, ...pagesView() });
+      if (req.method === 'POST' && url.pathname === '/api/local-pages') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        if (localPagesBusy) return sendJson(res, 409, { ok: false, error: 'Already finding the pages.' });
+        const addr = localAddress(body.address);
+        if (!addr) return sendJson(res, 400, { ok: false, error: 'The address must be on this computer, for example http://localhost:3000.' });
+        const f = checkFolder(body.folder);
+        localPagesBusy = true;
+        try { await discoverPages(projectDir, { address: addr, folder: f.ok ? f.folder : null }); return sendJson(res, 200, { ok: true, ...pagesView() }); }
+        catch (err) { return sendJson(res, 200, { ok: false, error: `Could not open the app: ${err.message}` }); }
+        finally { localPagesBusy = false; }
+      }
+      if (req.method === 'GET' && /^\/local-page\/l\d{1,3}\.jpg$/.test(url.pathname)) {
+        const f = path.join(projectDir, 'assets', 'local', 'pages', path.basename(url.pathname));
+        if (!fs.existsSync(f)) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+        res.writeHead(200, { 'content-type': 'image/jpeg', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
+        return fs.createReadStream(f).pipe(res);
+      }
       if (req.method === 'POST' && url.pathname === '/api/read-site') {
         const body = JSON.parse((await readBody(req)) || '{}');
         try {
-          const site = await readSite(body.url, opts.fetchImpl);
+          let site;
+          try { site = await readSite(body.url, opts.fetchImpl); } catch (err) {
+            // D-117: a local app may listen on 127.0.0.1 or ::1 only, while "localhost" resolves to the other
+            const la = localAddress(body.url);
+            if (!la || !/^https?:\/\/localhost[:/]/.test(la)) throw err;
+            site = null;
+            for (const alt of [la.replace('//localhost', '//127.0.0.1'), la.replace('//localhost', '//[::1]')]) { try { site = await readSite(alt, opts.fetchImpl); break; } catch {} }
+            if (!site) throw err;
+          }
           return sendJson(res, 200, { ok: true, site });
         } catch (err) {
           return sendJson(res, 200, { ok: false, error: `Could not read the site: ${err.message}` });
         }
       }
+      // D-113: the pictures from the site, ticked to use as product UI
+      if (req.method === 'GET' && url.pathname === '/api/pictures') return sendJson(res, 200, { ok: true, pictures: readPictures(projectDir).map(({ id, kind, alt, w, h, use, page }) => ({ id, kind, alt, w, h, use, page })) });
+      if (req.method === 'POST' && url.pathname === '/api/pictures') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        if (!/^p\d{1,3}$/.test(String(body.id || ''))) return sendJson(res, 400, { ok: false, error: 'no such picture' });
+        setPictureUse(projectDir, String(body.id), body.use === true);
+        return sendJson(res, 200, { ok: true });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/music-path') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const r = await saveOwnTrackPath(projectDir, body.path);
+        return sendJson(res, r.ok ? 200 : 400, r);
+      }
       if (req.method === 'POST' && url.pathname === '/api/music-upload') {
         const r = await saveOwnTrack(projectDir, req, url.searchParams.get('name') || 'track');
         return sendJson(res, r.ok ? 200 : 400, r);
+      }
+      if (req.method === 'GET' && /^\/site-picture\/p\d{1,3}\.png$/.test(url.pathname)) {
+        const f = path.join(projectDir, 'assets', 'site', 'pictures', path.basename(url.pathname));
+        if (!fs.existsSync(f)) return send(res, 404, 'not found', 'text/plain; charset=utf-8');
+        res.writeHead(200, { 'content-type': 'image/png', 'cache-control': 'no-store' });
+        return fs.createReadStream(f).pipe(res);
       }
       if (req.method === 'GET' && url.pathname === '/brand/logo') {
         // the logo as a picture: only the two fixed names, no scripts even if one slipped through
@@ -869,7 +1066,8 @@ export function startServer(opts) {
         // the save time is kept apart from plan.json, which later steps rewrite
         let savedAt = 0;
         try { savedAt = JSON.parse(fs.readFileSync(path.join(projectDir, 'brief-saved.json'), 'utf8')).at; } catch { try { savedAt = fs.statSync(path.join(projectDir, 'plan.json')).mtimeMs; } catch {} }
-        return sendJson(res, 200, { ok: true, ...directionProgress(projectDir, savedAt), direction_url: pagesOf(projectDir).direction?.url || null });
+        markFollowing(projectDir, 'outline');
+        return sendJson(res, 200, { ok: true, ...outlineProgress(projectDir, savedAt) });
       }
       if (req.method === 'POST' && url.pathname === '/api/brand-read') {
         const body = JSON.parse((await readBody(req)) || '{}');
@@ -889,30 +1087,78 @@ export function startServer(opts) {
         const brand = brandForBrief(String(body.slug || ''), projectDir, brandsDir);
         return brand ? sendJson(res, 200, { ok: true, brand }) : sendJson(res, 404, { ok: false, error: 'No saved brand by that name.' });
       }
+      // a name typed on the brand card that another saved brand already has (not this video's own brand)
+      if (req.method === 'GET' && url.pathname === '/api/brand-name') {
+        const video = readPlan(projectDir).plan?.video || {};
+        const clash = brandClash(String(url.searchParams.get('name') || ''), findBrandFor(video, brandsDir), brandsDir);
+        return sendJson(res, 200, { ok: true, ...(clash ? { exists: true, name: clash.name, slug: clash.slug } : { exists: false }) });
+      }
       if (req.method === 'POST' && url.pathname === '/api/brand-save') {
         const video = readPlan(projectDir).plan?.video;
         if (!video) return sendJson(res, 400, { ok: false, error: 'Save the brief first.' });
-        const saved = findBrandFor(video, brandsDir);
-        const b = saveBrandProfile({ ...brandFromVideo(video, saved), ...(saved ? { slug: saved.slug } : {}) }, { projectDir, dir: brandsDir, now: opts.now?.() || new Date(), from: path.basename(projectDir) });
+        const body = JSON.parse((await readBody(req)) || '{}');
+        // the name typed on the card; plain text, one line, at most 80 characters
+        const name = typeof body.name === 'string' ? body.name.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80) : '';
+        let saved = findBrandFor(video, brandsDir);
+        // another saved brand by that name is never overwritten unless the user chose to update it
+        const clash = brandClash(name, saved, brandsDir);
+        if (clash && body.update !== true) return sendJson(res, 409, { ok: false, exists: true, name: clash.name, slug: clash.slug, error: `A saved brand named ${clash.name} already exists. Update it, or change the name to save a new brand.` });
+        if (clash) saved = { ...clash };
+        const b = saveBrandProfile({ ...brandFromVideo(video, saved), ...(name ? { name } : {}), ...(saved ? { slug: saved.slug } : {}) }, { projectDir, dir: brandsDir, now: opts.now?.() || new Date(), from: path.basename(projectDir) });
         console.log(`Brand ${saved ? 'updated' : 'saved'}: ${b.name} (${path.join(brandsDir, b.slug)}).`);
         refreshDashboard(projectDir);
         return sendJson(res, 200, { ok: true, name: b.name, slug: b.slug, updated: Boolean(saved) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/overview') {
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const start = body.start && typeof body.start === 'object' ? body.start : {};
+        // a saved brand's story goes in as data for the draft
+        if (start.brand) { try { const b = brandForBrief(String(start.brand), projectDir, brandsDir); if (b) start.story = { product: b.product, claim: b.claim, viewer: b.viewer, pain_point: b.pain_point, proof_moment: b.proof_moment, cta: b.cta }; } catch {} }
+        try {
+          const { draftOverview } = await import('./overview.mjs');
+          const overview = await draftOverview(projectDir, start, opts.overviewOpts || {});
+          return sendJson(res, 200, { ok: true, overview });
+        } catch (err) {
+          if (err.name === 'AwaitingAgent') {
+            // the agent's `wait.mjs <project> task` exits on this task; the page asks again until the answer is there
+            console.log(`Task waiting for the agent: ${err.task} (write the answer to ${err.answer})`);
+            return sendJson(res, 202, { ok: false, waiting: true, task: path.basename(err.task) });
+          }
+          return sendJson(res, 500, { ok: false, error: err.message.split('\n')[0] });
+        }
       }
       if (req.method === 'POST' && url.pathname === '/api/submit') {
         const body = JSON.parse((await readBody(req)) || '{}');
         let result;
         try {
-          result = saveBrief(projectDir, body, { now: opts.now?.() });
+          result = saveBrief(projectDir, body, { now: opts.now?.(), keepOutline: body.keep_outline === true });
         } catch (err) {
           return sendJson(res, 500, { ok: false, error: err.message });
         }
         if (!result.ok) return sendJson(res, 400, { ok: false, problems: result.problems });
+        // kept outline: the brief is saved, nothing is rewritten, and the user goes back to the outline page
+        if (body.keep_outline === true && result.video?.intake?.outline) {
+          try { ensureNote(projectDir, result.video?.intake?.notes, 'brief', { brandsDir }); } catch {}
+          refreshDashboard(projectDir);
+          console.log(`Brief saved, outline kept: ${result.planPath}. Nothing to rewrite.`);
+          const { reopenStage } = await import('../notes.mjs');
+          const next = await reopenStage(projectDir, 'outline').catch(() => null);
+          return sendJson(res, 200, { ok: true, planPath: result.planPath, next: next || '/saved', kept: true });
+        }
         fs.writeFileSync(path.join(projectDir, 'brief-saved.json'), JSON.stringify({ at: Date.now() }) + '\n');
+        // D-97: more ideas for the same product wait on the dashboard as queued videos, each with its own brief
+        let queued = [];
+        if (Array.isArray(body.queue) && body.queue.length) {
+          const { queueVideos } = await import('../queue.mjs');
+        try { ensureNote(projectDir, result.video?.intake?.notes, 'brief', { brandsDir }); } catch {}
+          queued = queueVideos(projectDir, body.queue, { url: result.video.url, product: result.video.product, brand: typeof body.saved_brand === 'string' ? body.saved_brand : null, notes: '' });
+          if (queued.length) console.log(`Queued for later: ${queued.map((q) => q.project).join(', ')} (each opens on the dashboard with its own brief).`);
+        }
         refreshDashboard(projectDir);
         track('brief_saved', { ...projectProps(projectDir), from_brand: (() => { try { return Boolean(findBrandFor(JSON.parse(fs.readFileSync(result.planPath, 'utf8')).video, brandsDir)); } catch { return false; } })() });
         // the agent watches this server's output for this line and starts the direction step by itself
-        console.log(`Brief saved: ${result.planPath}. Next: the direction step (node plan/direction/run.mjs ${projectDir}).`);
-        return sendJson(res, 200, { ok: true, planPath: result.planPath, next: '/saved' });
+        console.log(`Brief saved: ${result.planPath}. Next: the outline (node plan/outline/run.mjs ${projectDir}).`);
+        return sendJson(res, 200, { ok: true, planPath: result.planPath, next: '/saved', queued: queued.map((q) => q.project) });
       }
       return send(res, 404, 'not found', 'text/plain; charset=utf-8');
     } catch (err) {

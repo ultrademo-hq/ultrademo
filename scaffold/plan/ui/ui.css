@@ -14,7 +14,7 @@ button.primary,.ud-btn--primary{box-shadow:inset 0 0 0 1.5px var(--ud-action-edg
 /* Shared pieces, from the guide's components (bundle.css) */
 .ud-logo{display:block;height:28px;width:auto}.ud-logo--dark{display:none}
 .ud-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.ud-theme{display:inline-grid;place-items:center;width:36px;height:36px;padding:0;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--text);cursor:pointer}
+.ud-theme{display:inline-grid;place-items:center;width:36px;height:36px;min-width:36px;min-height:0 !important;max-height:36px;aspect-ratio:1/1;flex:none;box-sizing:border-box;padding:0 !important;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--text);cursor:pointer}
 .ud-theme:hover{border-color:var(--text)}
 /* the logo and the stage bar (D-79) stay at the top while the page scrolls */
 .ud-pin{position:sticky;top:0;z-index:20;background:var(--surface-soft);padding:12px 0 10px;margin-bottom:16px;border-bottom:1px solid transparent}
@@ -24,6 +24,20 @@ button.primary,.ud-btn--primary{box-shadow:inset 0 0 0 1.5px var(--ud-action-edg
 .ud-progress li span{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--surface-soft);font-size:11.5px;font-weight:700}
 .ud-progress li.now{color:var(--text);border-color:var(--text);font-weight:600}.ud-progress li.now span{background:var(--text);color:var(--surface)}
 .ud-progress li.done{color:var(--text)}.ud-progress li.done span{background:var(--surface-highlight)}
+.ud-progress li a.ud-step{display:contents;color:inherit;text-decoration:none}.ud-progress li:has(a.ud-step){cursor:pointer}.ud-progress li:has(a.ud-step):hover{border-color:var(--text)}
+.ud-progress li.ud-dash{margin-left:auto;padding:5px 12px;background:transparent}.ud-progress li.ud-dash a{color:var(--text);text-decoration:none;font-weight:600}
+/* one header row: the logo, the stages and All videos, the theme toggle; anything else in the pin (the brief's own steps) goes on the row below */
+.ud-pin{display:flex;flex-wrap:wrap;align-items:center;column-gap:18px;row-gap:10px}
+.ud-pin .ud-head{display:contents}.ud-pin .ud-head>a{order:0;flex:none}
+.ud-pin .ud-progress{order:1;flex:1 1 520px}.ud-pin .ud-progress>li:first-child{margin-left:auto}.ud-pin .ud-theme{order:2;flex:none}
+.ud-pin>:not(.ud-head):not(.ud-progress):not(script){order:3;flex:1 0 100%}
+/* the stage bar never wraps: when the header row is narrow (its own width, not the window: some pages are narrower) the other stages show their number only (the name is the tooltip),
+   and on a phone the bar takes its own row under the logo */
+.ud-progress li{flex:none;white-space:nowrap}.ud-progress .ud-sn{font-style:normal}
+.ud-pin .ud-progress{flex-wrap:nowrap;min-width:0}
+.ud-pin{container:udpin / inline-size}
+@container udpin (max-width:980px){.ud-pin .ud-progress{flex:1 1 auto}.ud-progress li:not(.now):not(.ud-dash){padding:5px 6px}.ud-progress li:not(.now):not(.ud-dash) .ud-sn{display:none}}
+@container udpin (max-width:600px){.ud-pin .ud-progress{order:3;flex:1 0 100%;overflow-x:auto}.ud-pin .ud-progress>li:first-child{margin-left:0}.ud-pin .ud-head>a{margin-right:auto}}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .ud-logo--light{display:none}:root:not([data-theme="light"]) .ud-logo--dark{display:block}}
 :root[data-theme="dark"] .ud-logo--light{display:none}:root[data-theme="dark"] .ud-logo--dark{display:block}
 .ud-eyebrow{display:inline-flex;gap:10px;align-items:center;font:500 12px/1.3 var(--font-mono);letter-spacing:.12em;text-transform:uppercase;color:var(--text-muted)}

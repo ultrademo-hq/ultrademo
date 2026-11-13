@@ -9,6 +9,7 @@ import { listLearnings, readProposals, videoTitle } from '../learnings.mjs';
 import { pagesOf, pageAlive } from '../pages.mjs';
 import { cachedUpdate } from '../updates.mjs';
 import { telemetryOn } from '../telemetry.mjs';
+import { queuedOf } from '../queue.mjs';
 
 export const PROJECTS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'projects');
 export const STAGES = ['Brief', 'Outline', 'Direction', 'Production', 'Review', 'Delivery'];
@@ -16,7 +17,7 @@ const readJson = (f, fb = null) => { try { return JSON.parse(fs.readFileSync(f, 
 const mtime = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
 const exists = (f) => fs.existsSync(f);
 const ls = (d) => { try { return fs.readdirSync(d); } catch { return []; } };
-const TYPE = { launch: 'Launch', explainer: 'Explainer', spotlight: 'Spotlight', ad: 'Ad' };
+const TYPE = { launch: 'Launch', explainer: 'Explainer', spotlight: 'Spotlight', ad: 'Ad', tutorial: 'Tutorial' };
 
 /** The latest activity on a video: the newest file among the plan, the brief, the direction, the scenes, the stills, the
  * renders, the review and the tasks, in the video and its vertical version (one level deep in each, so it stays quick). */
@@ -29,6 +30,9 @@ function lastActivity(dir) {
   }
   return t;
 }
+
+// how many notes a video has (D-101), read without seeding the list
+function notesCount(dir) { const n = readJson(path.join(dir, 'notes.json'), null); return Array.isArray(n?.notes) ? n.notes.length : 0; }
 
 // stages as STAGES above: 0 Brief, 1 Outline (D-91), 2 Direction, 3 Production, 4 Review, 5 Delivery
 function stageOf(dir, plan) {
@@ -68,11 +72,11 @@ function noteOf(dir, plan, stage) {
   if (stage === 2) {
     const p = readJson(path.join(dir, 'direction', 'proposals.json'));
     const n = (p?.directions || []).length;
-    return { text: n ? `Pick a direction: ${n} waiting` : 'Claude is writing the directions' };
+    return { text: n ? `Pick a direction: ${n} waiting` : 'Ultrademo is writing the directions' };
   }
   if (stage === 1) {
     const o = plan.video?.intake?.outline;
-    if (!o) return { text: 'Claude is writing the outline' };
+    if (!o) return { text: 'Ultrademo is writing the outline' };
     const changes = (o.moments || []).filter((m) => m.data_change).length;
     return { text: `Check the outline: ${(o.moments || []).length} moments${changes ? `, ${changes} that change data` : ''}` };
   }
@@ -87,6 +91,20 @@ export function collectDashboard({ projectsDir = PROJECTS_DIR, brandsDir = BRAND
     // _removed holds the videos taken off the dashboard (moved, never deleted)
     if (name.startsWith('.') || name === '_removed' || !fs.statSync(dir).isDirectory()) continue;
     const plan = readJson(path.join(dir, 'plan.json'), {});
+    // D-97: a queued video (no brief saved yet) waits here with what it will cover
+    const queued = queuedOf(dir);
+    if (queued) {
+      const qb = queued.brand ? brands.find((b) => b.slug === queued.brand) : null;
+      const pages = pagesOf(dir);
+      videos.push({
+        project: name, dir, stage: 0, queued: true, notes: notesCount(dir), note: `Queued ${String(queued.at || '').slice(0, 10)}: starts on its brief, filled from the first video`, final: null, finalVertical: null,
+        watch: null, cuts: [], watchVertical: null, brand: qb?.name || readJson(path.join(dir, 'brief-seed.json'), {}).product || 'New video', brandSlug: qb?.slug || null,
+        title: queued.cover.length > 80 ? `${queued.cover.slice(0, 78)}…` : queued.cover, type: TYPE[queued.video_type] || '', still: null,
+        live: Object.fromEntries(Object.entries(pages).filter(([, p]) => pageAlive(p)).map(([k, p]) => [k, p.url])),
+        updated: Date.parse(queued.at) || 0, proposals: null,
+      });
+      continue;
+    }
     if (!plan.video && !exists(path.join(dir, 'intake.log'))) continue;
     const v = plan.video || {};
     const it = v.intake || {};
@@ -107,7 +125,7 @@ export function collectDashboard({ projectsDir = PROJECTS_DIR, brandsDir = BRAND
     const live = Object.fromEntries(Object.entries(pages).filter(([, p]) => pageAlive(p)).map(([k, p]) => [k, p.url]));
     const length = v.length_s ? `${v.length_s >= 60 ? `${Math.floor(v.length_s / 60)}:${String(Math.round(v.length_s % 60)).padStart(2, '0')}` : `${Math.round(v.length_s)} s`}` : '';
     videos.push({
-      project: name, dir, stage, note: note.text, final: note.final || null, finalVertical: note.finalVertical || null,
+      project: name, dir, stage, note: note.text, notes: notesCount(dir), final: note.final || null, finalVertical: note.finalVertical || null,
       // what Watch plays: the final file once approved, else the latest render (and the vertical one beside it)
       watch: note.final || (exists(path.join(dir, 'out', 'video.mp4')) ? path.join(dir, 'out', 'video.mp4') : null),
       cuts: ls(path.join(dir, 'out')).filter((f) => /^cut-\d+\.mp4$/.test(f)).sort().map((f) => path.join(dir, 'out', f)),

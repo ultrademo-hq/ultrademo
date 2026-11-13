@@ -20,6 +20,8 @@ import { z } from 'zod';
 import { BrandReadSchema, DirectionsSchema, DirectionsModelSchema, DirectionProposalSchema, SIGNATURE_KINDS, TEMPLATE_SPINES, SKETCH_KINDS, TEXT_ANIMATIONS } from './schema.mjs';
 import { brandReadSystem, brandReadPrompt, directionsSystem, directionsPrompt, templateLength } from './doctrine.mjs';
 import { DIALS, HOOK_ANGLES, HOOK_ROUTES, BEATS, TRANSITIONS, countWords } from '../schema.mjs';
+import { cleanFx, FX_PER_SCENE, FX_LEVELS } from '../fx.mjs';
+import { readCodeRead, codeReadBlock } from '../local.mjs';
 
 export const DEFAULT_MODEL = 'anthropic/claude-sonnet-5';
 export const DEFAULT_CHEAP_MODEL = 'google/gemini-3.1-flash-lite';
@@ -77,7 +79,7 @@ export class Ledger {
   line() {
     const t = this.toJSON();
     // agent mode: the user's own Claude did the work; nothing is charged per call, the tokens are estimates
-    if (t.total_usd === 0 && this.calls.some((c) => c.estimated)) return `About ${fmtTokens(t.input_tokens)} tokens read and ${fmtTokens(t.output_tokens)} written by Claude on your plan (estimated from ${this.calls.length} task${this.calls.length === 1 ? '' : 's'}; /cost in Claude Code shows the session's exact use)`;
+    if (t.total_usd === 0 && this.calls.some((c) => c.estimated)) return `About ${fmtTokens(t.input_tokens)} tokens read and ${fmtTokens(t.output_tokens)} written by your AI session (estimated from ${this.calls.length} task${this.calls.length === 1 ? '' : 's'}; /cost in Claude Code shows the session's exact use)`;
     return `Cost: $${t.total_usd.toFixed(4)} of a $${this.cap_usd.toFixed(2)} cap · ${t.input_tokens} in / ${t.output_tokens} out tokens · ${this.calls.length} call${this.calls.length === 1 ? '' : 's'}`;
   }
 }
@@ -189,7 +191,8 @@ export function imageOf(file, label) {
 export async function brandRead({ video, scout, projectDir, model = DEFAULT_CHEAP_MODEL, key, ledger, fetchImpl, log }) {
   const unsure = video.intake?.unsure ?? {};
   const images = [...scout.pages.slice(0, 3).filter((p) => p.screenshot).map((p) => imageOf(path.join(projectDir, p.screenshot), `Screenshot: ${p.title || p.id} (${p.url})`)), ...givenImages(video, projectDir, 2)];
-  return callModel({ name: 'brand-read', model, key, system: brandReadSystem(), prompt: brandReadPrompt({ video, scout, unsure }), images, schema: BrandReadSchema, ledger, maxOutputTokens: 4000, fetchImpl, log });
+  const { notesBlock } = await import('../notes.mjs');
+  return callModel({ name: 'brand-read', model, key, system: brandReadSystem(), prompt: brandReadPrompt({ video, scout, unsure }) + notesBlock(projectDir), images, schema: BrandReadSchema, ledger, maxOutputTokens: 4000, fetchImpl, log });
 }
 
 /** Apply the brand read's proposals to the video block: null fields become proposed values, marked under intake.proposed. */
@@ -236,7 +239,8 @@ export function applyProposals(video, brand) {
  */
 export async function proposeDirections({ video, brand, claims, sources, fonts, styles, music, pace, blueprints, scout, projectDir, style = null, model = DEFAULT_MODEL, key, ledger, fetchImpl, log }) {
   const spine = TEMPLATE_SPINES[video.template] || TEMPLATE_SPINES.launch;
-  const prompt = directionsPrompt({ video, brand, claims, sources, fonts, styles, music, pace, blueprints, spine, templateLength: templateLength(video.template), siteFonts: scout.tokens.fonts, style });
+  const { notesBlock } = await import('../notes.mjs');
+  const prompt = directionsPrompt({ video, brand, claims, sources, fonts, styles, music, pace, blueprints, spine, templateLength: templateLength(video.template), siteFonts: scout.tokens.fonts, style }) + (projectDir ? codeReadBlock(readCodeRead(projectDir)) : '') + notesBlock(projectDir);
   const system = directionsSystem();
   fs.mkdirSync(path.join(projectDir, 'direction'), { recursive: true });
   fs.writeFileSync(path.join(projectDir, 'direction', 'directions-prompt.md'), `# Directions prompt\n\nStatus: what the directions call was asked, written by plan/direction/propose.mjs; the model ${model}; the style choice ${style === 'brand' ? 'derived from the brand' : style?.id ? style.id : 'left to the skill'}.\n\n## System\n\n${system}\n\n## User\n\n${prompt}\n`);
@@ -322,6 +326,7 @@ export function repair(d, ctx) {
     m.visuals = (m.visuals || []).map((v) => ({ ref: String(v.ref || 'element'), kind: ['captured', 'rebuilt', 'illustration'].includes(v.kind) ? v.kind : 'rebuilt' }));
     m.words_max = (spine.find((s) => s.beat === m.beat) || {}).cap || 8;
     m.claims = (m.claims || []).filter((c) => ctx.claimIds.has(c));
+    m.fx = cleanFx(m.fx, { cap: FX_PER_SCENE[FX_LEVELS.includes(ctx.effects) ? ctx.effects : 'lively'], proposal: true });
     if (i === out.moments.length - 1) m.carry = null;
     else if (!m.carry || !m.carry.element) m.carry = { element: 'the accent colour', action: 'carries into the next moment' };
     if (i === 0) m.transition_in = 'cut';

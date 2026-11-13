@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validatePlan, formatReport } from './validate.mjs';
+import { fxLine } from './fx.mjs';
 
 const STATUS_MAP = { planned: 'outline', sketched: 'outline', built: 'animated', approved: 'animated', fix: 'animated' };
 
@@ -75,6 +76,7 @@ export function renderStoryboard(plan) {
     const roles = rolesLine(s);
     if (roles) out.push(`- roles: ${roles}`);
     if (s.sound.sfx.length) out.push(`- sfx: ${s.sound.sfx.join(', ')}`);
+    if (Array.isArray(s.sound.fx)) out.push(`- effects: ${s.sound.fx.length ? fxLine(s.sound.fx) : 'none'}`);
     if (s.blueprint_note) out.push(`${s.blueprint_posture === 'adapt' ? 'Adapt' : 'Note'}: ${s.blueprint_note}`);
     [...s.motion].sort((a, b) => a.from_s - b.from_s).forEach((m, k) => {
       out.push(`Scene ${k + 1} (${t(m.from_s)}–${t(m.to_s)}s): ${m.what}`);

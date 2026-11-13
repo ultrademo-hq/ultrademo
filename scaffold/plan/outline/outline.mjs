@@ -46,7 +46,8 @@ export function outlinePrompt(video) {
     product: video.product, url: video.url, video_type: it.video_type || video.template, scope: it.scope, feature: it.feature,
     length_s: video.length_s, length_fit: it.length_fit, viewer: video.viewer, claim: video.claim, pain_point: video.pain_point,
     proof_moment: video.proof_moment, cta: video.cta, narration: video.narration, motion_between: it.motion_between,
-    screens_from: it.screens?.from, sign_in: it.sign_in?.path, notes: it.notes,
+    surfaces: it.surfaces, screens_from: it.screens?.from, sign_in: it.sign_in?.path, notes: it.notes,
+    what_it_covers: it.cover, what_it_is_for: it.purpose ? [...(it.purpose.chips || []), it.purpose.text].filter(Boolean) : undefined, overview: it.overview?.text,
   };
   const sources = (video.sources || []).map((s) => `- ${s.id} (${s.kind}): ${s.what}`).join('\n') || '- none yet';
   const site = it.site ? `${it.site.title || ''}\n${(it.site.headings || []).join(' · ')}` : 'not read';
@@ -57,17 +58,22 @@ ${tutorial ? `
 ${JSON.stringify(t, null, 1)}
 ` : ''}
 # Sources the user gave
-${sources}
-
+${sources}${(video.sources || []).some((s) => String(s.id).startsWith('site-pic-')) ? `
+The site-pic sources are pictures from the product's own site that the user ticked (D-113): a moment that shows one uses source "screenshot" and names it in "what". They stand in for the product's screens when the video is made from the public site.` : ''}
+${it.local ? `
+# The product on this computer (D-117)
+"live" screens come from its Local App${it.local.address ? `, captured at its local address (never shown on screen)` : ' (no local address given: rebuild them from the code)'}. ${it.local.wants ? `The user asked for these pages or parts, in their words: "${it.local.wants}". Use them where the story allows. ` : ''}Pick the page each moment shows${it.local.pages?.length ? ` from the pages found: ${it.local.pages.join('; ')}` : ' from the code read below'}. Set url to the page's route (for example /dashboard), never the local address.
+` : ''}
 # The site, as read at the brief
-${site}
+${it.site_read === 'none' ? 'No site read: the user described the product on the brief.' : site}
 
 # Rules
 - The moments in viewing order, each with a beat from the schema. ${tutorial
     ? `This is a tutorial: an opening moment only when the tutorial's opening is "hook" (beat hook) or "message" (beat hook, a title card), and its "what" ends on the bridge into the first step (what the viewer is about to build, or a question the steps answer), so the first step never arrives unexplained; then one moment per step (beat "step"), in the order a user would take them${t.steps?.length ? ', starting from the steps the user listed (split or add steps only where one listed step hides several clicks)' : ''}; then a closing moment only when its closing is "message" or "cta" (beat close).`
     : 'Follow the shape of the video type: a hook, the moments that carry it, a close.'}
 - source: where its screens come from. Prefer what the user gave (${list([it.screens?.from?.join(', '), (video.sources || []).length ? 'their uploads' : ''])}); "live" for the signed-in product, "site" for public pages, "rebuilt" for a moment with no product screen (a title card, a closing message).
-- url: the product address of the screen when you know it from the site or the brief; empty otherwise. Never guess a private address.
+- url: the product address of the screen when you know it from the site or the brief; empty otherwise. Never guess a private address.${(it.surfaces || []).includes('website') && (it.surfaces || []).some((x) => x !== 'website') ? `
+- surfaces: the video shows both the public website and the ${(it.surfaces || []).includes('mobile-app') && !(it.surfaces || []).includes('web-app') ? 'mobile app' : 'signed-in app'}. Moments may move from the site into the product (source "site", then "live"); make that move one clear moment (the visitor signs in, or the site's button opens the product), never a jump cut between unrelated screens.` : ''}
 - sign_in: true when the screen is behind the product's sign-in.
 - data_change: say plainly what a step creates, changes, sends or deletes in the product (a record, a connection, a message). Name what it creates with the example data you would use. Empty when it only looks. A step that must change data to be shown is fine: the user is asked to confirm a demo account before anything is created.
 - seconds: what the moment needs to be followed${tutorial ? ' (a step: the caption read, the click seen, the result visible)' : ''}. The total should land near ${video.length_s || 'the length'} s, but never squeeze a step to fit: a little over is better than rushed.
@@ -103,9 +109,9 @@ export function editedMoments(input) {
   const arr = Array.isArray(input) ? input : [];
   const one = (v, n) => String(v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
   return arr.slice(0, 200).map((m) => ({
-    name: one(m?.name, 80) || 'Moment',
+    name: one(m?.name, 80) || 'Scene moment',
     beat: BEATS.includes(m?.beat) ? m.beat : 'step',
-    what: one(m?.what, 400) || one(m?.name, 80) || 'Moment',
+    what: one(m?.what, 400) || one(m?.name, 80) || 'Scene moment',
     source: SOURCES.includes(m?.source) ? m.source : 'rebuilt',
     url: /^https?:\/\//.test(one(m?.url, 500)) ? one(m.url, 500) : '',
     sign_in: Boolean(m?.sign_in),
@@ -124,7 +130,7 @@ export function confirmOutline(plan, { moments, demo_account = false, creates_ok
   const o = plan.video.intake?.outline;
   if (!o) return { ok: false, problems: ['There is no outline to confirm yet.'] };
   const ms = moments ? editedMoments(moments) : o.moments;
-  if (!ms.length) return { ok: false, problems: ['The outline needs at least one moment.'] };
+  if (!ms.length) return { ok: false, problems: ['The outline needs at least one scene moment.'] };
   const changes = ms.filter((m) => m.data_change);
   const allowed = changes.length > 0 && demo_account === true && creates_ok === true;
   const out = {

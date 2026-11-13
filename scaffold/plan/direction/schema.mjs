@@ -10,6 +10,7 @@
 
 import { z } from 'zod';
 import { DIALS, HOOK_ANGLES, HOOK_ROUTES, BEATS, TEMPLATES, TRANSITIONS, countWords } from '../schema.mjs';
+import { cleanFx, effectsSetting } from '../fx.mjs';
 
 // ---------------------------------------------------------------------------
 // Vocabularies the model chooses from (every one validated here, never free text)
@@ -260,7 +261,12 @@ export function buildDirectionSchemas(strict = true) {
     transition_in: pick(TRANSITIONS).describe('how this moment comes in; "cut" on the first'),
     motion: z.string().describe('the motion across the whole moment, in plain words; name the product\'s own parts'),
     camera: z.string().describe('the camera in a few words: fixed, slow push, one move, follows the cursor'),
-    sound: z.string().describe('the sound cue, in a few words'),
+    sound: z.string().describe('what the music does in this moment, in a few words (keeps playing, hits on each word, drops away); the effects go in fx'),
+    fx: z.array(z.object({
+      effect: z.string().nullish().describe('an effect name from the effects library (a visual and its sound), or null for a sound on its own'),
+      sound: z.string().nullish().describe('a sound id from the sounds-on-their-own list when effect is null, else null'),
+      when: z.string().describe('when it lands, in plain words tied to what happens on screen ("when the payout turns Paid"), never a second'),
+    })).optional().describe('the effects and sounds for events the viewer sees happen in this moment; empty when nothing happens or the effects level is none; never clicks, typing, pops, ticks or whooshes'),
     order: z.array(z.string()).describe('order of arrival: three to six short steps'),
     sketch: z.object({
       kind: pick(SKETCH_KINDS),
@@ -471,9 +477,11 @@ export function toPlanDirection(d, ctx) {
     sketches: ctx.sketchesPath,
     banned: d.banned,
     ...(['fade-rise', 'scale-pop', 'mark-then-name', 'wipe-bar', 'flash-reveal', 'glint', 'none'].includes(d.logo_motion) ? { logo_motion: d.logo_motion } : {}),
+    ...(typeof d.logo_file === 'string' && /^assets\/brand\/[a-z0-9-]+\.(svg|png|webp)$/.test(d.logo_file) ? { logo_file: d.logo_file } : {}),
     ...(d.thumbnail && ['info', 'headline', 'product', 'versus', 'moment'].includes(d.thumbnail.layout) ? { thumbnail: { layout: d.thumbnail.layout, intro: d.thumbnail.intro === true, ...(String(d.thumbnail.title || '').trim() ? { title: String(d.thumbnail.title).trim().slice(0, 140) } : {}), ...(String(d.thumbnail.line || '').trim() ? { line: String(d.thumbnail.line).trim().slice(0, 200) } : {}), ...(/^[a-z0-9][a-z0-9-]{0,79}$/.test(String(d.thumbnail.screen || '')) ? { screen: String(d.thumbnail.screen) } : {}) } } : {}),
     cast: (Array.isArray(d.cast) && d.cast.length ? d.cast : castFromDirection(d, ctx?.video?.product)).map((c) => ({ name: String(c?.name || '').trim(), role: String(c?.role || '').trim() })).filter((c) => c.name && c.role).slice(0, 16),
     dials: d.dials,
+    effects: effectsSetting(d, ctx.video),
     ...(d.video_style ? { video_style: d.video_style } : {}),
     ground: d.ground,
     motion_grammar: d.motion_grammar,
@@ -528,6 +536,7 @@ export function momentRules(d, m, catalogue, index = 0) {
 }
 
 export function toSceneSkeletons(d, ctx) {
+  const fxSetting = effectsSetting(d, ctx.video);
   const spine = TEMPLATE_SPINES[ctx.video.template] || TEMPLATE_SPINES.launch;
   const capFor = (beat) => (spine.find((s) => s.beat === beat) || {}).cap ?? 8;
   const roleFor = (beat) => (spine.find((s) => s.beat === beat) || {}).role ?? beat;
@@ -583,7 +592,7 @@ export function toSceneSkeletons(d, ctx) {
       mood: m.sketch?.feeling || d.mood,
       camera: m.camera || 'locked',
       motion: motionLines(m, duration_s, hold_s, rules),
-      sound: { cue: m.sound || '', sfx: [] },
+      sound: { cue: m.sound || '', sfx: [], ...(Array.isArray(m.fx) ? { fx: fxSetting.level === 'none' ? [] : cleanFx(m.fx) } : {}) },
       hold_s,
       ...(last ? {} : { carry: m.carry && m.carry.element ? m.carry : { element: 'the accent colour', action: 'carries into the next moment' } }),
       reads,

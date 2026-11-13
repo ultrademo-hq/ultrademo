@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { voiceover } from './voiceover.mjs';
 import { mixAudio, musicFor, sceneCues } from './audio.mjs';
 import { uiCssInline, udHeadInline } from '../ui/inline.mjs';
+import { FAVICON } from '../ui/favicon.mjs';
 
 export async function audition(projectDir, voices, { set = 'auditions', log = console.log } = {}) {
   const plan = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8'));
@@ -43,7 +44,7 @@ export async function audition(projectDir, voices, { set = 'auditions', log = co
 /** The comparison page for a set of auditions (rows from auditions.json). */
 export function writeAuditionPage(dir, plan, rows) {
   const esc = (x) => String(x).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Voice auditions</title>
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}<title>Voice auditions</title>
 <style>${uiCssInline()}
 body{margin:0;background:var(--surface-soft);color:var(--text);font:16px/1.5 var(--ud-body)}main{max-width:1200px;margin:0 auto;padding:24px 16px 48px}
 .ud-head{margin:0 0 22px}h1{font-family:var(--ud-display);font-weight:800;font-size:clamp(28px,4vw,40px);letter-spacing:-.035em;line-height:1.05;margin:10px 0 8px}p{color:var(--text-muted);margin:0 0 22px}

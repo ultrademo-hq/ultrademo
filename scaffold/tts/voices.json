@@ -11,7 +11,8 @@
    "gender": "female",
    "accent": "American",
    "house": true,
-   "desc": "Confident and emotive, made for ads and launches."
+   "desc": "Confident and emotive, made for ads and launches.",
+   "traits": ["Confident", "Emotive"]
   },
   {
    "id": "killian",
@@ -21,7 +22,8 @@
    "gender": "male",
    "accent": "American",
    "house": true,
-   "desc": "Clear, warm and emotive, made for ads and launches."
+   "desc": "Clear, warm and emotive, made for ads and launches.",
+   "traits": ["Clear", "Warm", "Emotive"]
   },
   {
    "id": "jesse",
@@ -30,7 +32,8 @@
    "spec": "elevenlabs:sXcl1NoQHcU7NRh6Na5D",
    "gender": "male",
    "accent": "American",
-   "desc": "Confident and warm, a little older."
+   "desc": "Confident and warm, a little older.",
+   "traits": ["Confident", "Warm", "Mature"]
   },
   {
    "id": "asher",
@@ -39,7 +42,8 @@
    "spec": "elevenlabs:UaYTS0wayjmO9KD1LR4R",
    "gender": "male",
    "accent": "British",
-   "desc": "Confident and playful, social-media style."
+   "desc": "Confident and playful, social-media style.",
+   "traits": ["Confident", "Playful"]
   },
   {
    "id": "kristen",
@@ -48,7 +52,8 @@
    "spec": "elevenlabs:dfeOmy6Uay63tNhyO99j",
    "gender": "female",
    "accent": "American",
-   "desc": "Natural and focused; an unhurried pace, better for longer videos."
+   "desc": "Natural and focused; an unhurried pace, better for longer videos.",
+   "traits": ["Natural", "Focused", "Unhurried"]
   },
   {
    "id": "cherry",
@@ -57,7 +62,8 @@
    "spec": "elevenlabs:CKIFaViQ01w5KSowrs6X",
    "gender": "female",
    "accent": "American",
-   "desc": "High energy, buy-now excitement; best for short ads."
+   "desc": "High energy, buy-now excitement; best for short ads.",
+   "traits": ["Energetic", "Upbeat"]
   },
   {
    "id": "amelia",
@@ -66,7 +72,8 @@
    "spec": "elevenlabs:ZF6FPAbjXT4488VcRRnw",
    "gender": "female",
    "accent": "British",
-   "desc": "Enthusiastic and expressive storyteller."
+   "desc": "Enthusiastic and expressive storyteller.",
+   "traits": ["Enthusiastic", "Expressive"]
   },
   {
    "id": "tiffany",
@@ -75,7 +82,8 @@
    "spec": "elevenlabs:UM3TOcm5kcELI84GFoAz",
    "gender": "female",
    "accent": "American",
-   "desc": "Conversational and relaxed; suits feature walkthroughs more than launches."
+   "desc": "Conversational and relaxed; suits feature walkthroughs more than launches.",
+   "traits": ["Conversational", "Relaxed"]
   },
   {
    "id": "eve",
@@ -84,7 +92,8 @@
    "spec": "pocket:eve",
    "gender": "female",
    "accent": "American",
-   "desc": "Free voice, runs on your computer."
+   "desc": "Free voice, runs on your computer.",
+   "traits": ["Conversational"]
   },
   {
    "id": "mary",
@@ -94,6 +103,7 @@
    "gender": "female",
    "accent": "American",
    "desc": "Free voice, conversational; runs on your computer.",
+   "traits": ["Conversational"],
    "house": true
   },
   {
@@ -104,6 +114,7 @@
    "gender": "female",
    "accent": "American",
    "desc": "Free and expressive, from an openly licensed reader; slower to make on a laptop.",
+   "traits": ["Expressive"],
    "credit": "Hi-Fi TTS speaker 8051 (Maria Kasper, LibriVox), CC BY 4.0; tts/references/ATTRIBUTION.md"
   },
   {
@@ -114,6 +125,7 @@
    "gender": "female",
    "accent": "British",
    "desc": "Free and expressive, from an openly licensed reader; slower to make on a laptop.",
+   "traits": ["Expressive"],
    "credit": "Hi-Fi TTS speaker 92 (Cori Samuel, LibriVox), CC BY 4.0; tts/references/ATTRIBUTION.md"
   },
   {
@@ -124,7 +136,8 @@
    "gender": "male",
    "house_fallback": true,
    "accent": "American",
-   "desc": "Free voice, runs on your computer."
+   "desc": "Free voice, runs on your computer.",
+   "traits": ["Conversational"]
   },
   {
    "id": "alba",
@@ -133,7 +146,8 @@
    "spec": "pocket:alba",
    "gender": "male",
    "accent": "American",
-   "desc": "Free voice, runs on your computer."
+   "desc": "Free voice, runs on your computer.",
+   "traits": ["Confident"]
   },
   {
    "id": "stuart-bell",
@@ -142,7 +156,8 @@
    "spec": "pocket:stuart_bell",
    "gender": "male",
    "accent": "British",
-   "desc": "Free voice, runs on your computer."
+   "desc": "Free voice, runs on your computer.",
+   "traits": ["Expressive"]
   },
   {
    "id": "james",
@@ -152,6 +167,7 @@
    "gender": "male",
    "accent": "American",
    "desc": "Free and more expressive; slower to make on a laptop.",
+   "traits": ["Expressive"],
    "house": true
   }
  ]

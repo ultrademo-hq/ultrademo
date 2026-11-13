@@ -107,7 +107,7 @@ export const ClaimSchema = z.strictObject({
 
 export const VideoSchema = z.strictObject({
   product: z.string().min(1),
-  url: z.string().url(),
+  url: z.union([z.string().url(), z.literal('')]).describe('the public site; the local app\'s address when there is none; empty when the user described the product (D-117)'),
   template: z.enum(TEMPLATES),
   viewer: z.string().min(1).nullable().describe("who it is for, in the site's own words; null while Unsure at intake"),
   claim: z.string().min(1).nullable().describe("the core message in the user's own words (no word limit; the direction step writes the on-screen lines from it); null while Unsure at intake"),
@@ -196,7 +196,9 @@ export const DirectionSchema = z.strictObject({
     line: z.string().max(200).optional(),
     screen: z.string().min(1).optional().describe('the source id of the screen shown in it; else the first screenshot'),
   }).optional().describe('D-82: the thumbnail picked on the refine page; intro opens the video on it for about 1.5 s (taken from scene 1)'),
+  logo_file: z.string().regex(/^assets\/brand\/[a-z0-9-]+\.(svg|png|webp)$/).optional().describe('the logo as it reads on this direction\'s ground (a logo change on the refine page); else the logo source'),
   logo_motion: z.enum(['fade-rise', 'scale-pop', 'mark-then-name', 'wipe-bar', 'flash-reveal', 'glint', 'none']).optional().describe('how the logo arrives in the reveal and the close (refine page)'),
+  effects: z.strictObject({ level: z.enum(['lively', 'subtle', 'none']), interface: z.boolean() }).optional().describe('the effects level and the interface sounds switch (D-115, Refine page)'),
   cast: z.array(z.strictObject({ name: z.string().min(1), role: z.string().min(1) })).default([]).describe('the people and companies on screen, each with one role (refine page); production uses exactly these'),
   dials: z.strictObject({
     energy: z.enum(DIALS.energy),
@@ -277,7 +279,10 @@ export const SceneSchema = z.strictObject({
   mood: z.string().min(1).describe('the emotional beat'),
   camera: z.string().min(1),
   motion: z.array(MotionLineSchema).min(1),
-  sound: z.strictObject({ cue: z.string().default(''), sfx: z.array(z.string()).default([]) }).default({ cue: '', sfx: [] }),
+  sound: z.strictObject({
+    cue: z.string().default(''), sfx: z.array(z.string()).default([]),
+    fx: z.array(z.strictObject({ effect: z.string().min(1).optional(), sound: z.string().min(1).optional(), when: z.string().default('') })).optional().describe('the effects and sounds planned on the Refine page (D-115): production plays exactly these; absent on a plan from before'),
+  }).default({ cue: '', sfx: [] }),
   hold_s: seconds,
   carry: z.strictObject({ element: z.string().min(1), action: z.string().min(1) }).optional(),
   reads: z.array(z.strictObject({ from_s: seconds, to_s: seconds, what: z.string().min(1) })).default([]),

@@ -9,6 +9,7 @@
 // Loads projects/<project>/flow.mjs; the folder name IS the project name.
 
 import {chromium} from 'playwright';
+import {userAgentFor, useOrdinaryUserAgent} from '../plan/browser.mjs';
 import {mkdir, rm, writeFile, readFile} from 'node:fs/promises';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -69,9 +70,11 @@ if (flow.profile) {
       ...contextOptions,
     },
   );
+  // D-99: the ordinary Chrome user agent, so a bot rule against "HeadlessChrome" does not block the capture
+  await useOrdinaryUserAgent(context);
 } else {
   browser = await chromium.launch();
-  context = await browser.newContext(contextOptions);
+  context = await browser.newContext({...contextOptions, userAgent: userAgentFor(browser)});
 }
 
 // Hide framework dev-mode chrome (e.g. the Next.js badge and dev-tools button

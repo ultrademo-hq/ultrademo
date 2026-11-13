@@ -16,6 +16,7 @@
 
 import { SIGNATURE_KINDS, SKETCH_KINDS, TEMPLATE_SPINES, TEXT_ANIMATIONS, PACE_BY_ENERGY } from './schema.mjs';
 import { DIALS, HOOK_ANGLES, HOOK_ROUTES } from '../schema.mjs';
+import { fxPromptSection } from '../fx.mjs';
 
 /** D-77/D-78 brief fields: the video type and what it covers, the exact wording, the effects level, the screens given. */
 function briefExtras(video) {
@@ -26,6 +27,8 @@ function briefExtras(video) {
     effects: it.effects ?? 'lively',
     screens_given: (video.sources || []).filter((s) => s.kind === 'mockup' || s.kind === 'screenshot').map((s) => s.what).slice(0, 8),
     user_notes: it.notes || null,
+    // D-96: Start and the overview the user confirmed, in their words
+    surfaces: it.surfaces || null, what_it_covers: it.cover || null, what_it_is_for: it.purpose ? [...(it.purpose.chips || []), it.purpose.text].filter(Boolean) : null, overview: it.overview?.text || null,
     // "Show me other ways": what the user asked for when they set directions aside (latest last)
     other_directions_asked: it.direction_asks?.length ? it.direction_asks : null,
     brand_confirmed: it.brand && (it.brand.logo || Object.keys(it.brand.colors || {}).length || Object.keys(it.brand.fonts || {}).length) ? it.brand : null,
@@ -119,7 +122,11 @@ WHAT EACH DIRECTION CONTAINS. A name (two to four words) and the look in a line 
 
 SIGNATURE MOVE KINDS. ${Object.entries(SIGNATURE_KINDS).map(([k, v]) => `${k}: ${v.what}`).join('. ')}. counter-climb is allowed only with a cited number (give the claim id); never invent one.
 
-MOMENTS. Follow the template's spine given below, in order; the first moment is always the hook. Each moment has: the beat, a name, the goal in one sentence, a duration in seconds (the list sums to the video length; label floor 0.8 s, otherwise about 0.3 s a word with a 1.2 s minimum plus entrance and exit; a product moment 4–8 s), the copy within its word cap (headline plus second line counted together; an accent substring; an optional uppercase kicker), what the viewer takes in, what continues into the next moment (an element and what it does; null only on the last), the visuals with their kind, the claim ids it relies on, a shot blueprint id from the list or "composed", how it comes in (cut, crossfade, zoom-through, match, wipe), the motion across the whole moment in plain words naming the product's own parts, the camera, the sound cue, the order of arrival as three to six short steps, and the sketch: a cell kind from ${list(SKETCH_KINDS)}, a pill label if the layout has a button, up to four short labels for its boxes or rows, one motion note, and the caption lines (meaning, feeling, picture, objects, colours as palette roles, never values).
+MOMENTS. Follow the template's spine given below, in order; the first moment is always the hook. Each moment has: the beat, a name, the goal in one sentence, a duration in seconds (the list sums to the video length; label floor 0.8 s, otherwise about 0.3 s a word with a 1.2 s minimum plus entrance and exit; a product moment 4–8 s), the copy within its word cap (headline plus second line counted together; an accent substring; an optional uppercase kicker), what the viewer takes in, what continues into the next moment (an element and what it does; null only on the last), the visuals with their kind, the claim ids it relies on, a shot blueprint id from the list or "composed", how it comes in (cut, crossfade, zoom-through, match, wipe), the motion across the whole moment in plain words naming the product's own parts, the camera, what the music does, the effects (below), the order of arrival as three to six short steps, and the sketch: a cell kind from ${list(SKETCH_KINDS)}, a pill label if the layout has a button, up to four short labels for its boxes or rows, one motion note, and the caption lines (meaning, feeling, picture, objects, colours as palette roles, never values).
+
+EFFECTS. An effect marks an event the viewer sees happen in a moment: a visual and its sound, by name from the effects library; a sound on its own (a crowd gasp at a surprising number, an aww at a let-down) by id from the sounds list. Follow the brief's effects level: lively, up to two in a moment that has an event; subtle, at most one, on the key moments only (the reveal, a proof, the result); none, no effects anywhere. A moment where nothing happens has none: never put one on an entrance, an exit or a cut. Each one says when it lands in plain words tied to what happens on screen ("when the payout turns Paid"), never a second. Never list clicks, typing, pops, ticks or whooshes: the builder adds them wherever they happen. Draw what the sound says: confetti or sparkles only where the picture has them.
+
+When the brief's url is a local address (localhost, 127.0.0.1), the product is not public yet: never put that address on screen; a browser bar shows the product's name or no address.
 
 Numbers appear on screen only when a claim id carries them. Never name a competitor. Never write a colour value inside copy, motion or captions; name the role.`;
 }
@@ -156,6 +163,8 @@ ${styleSection(style, styles)}
 # Music library (file · set · tempo · beat strength 0–1 · usable from · mood)
 ${music.map((m) => `${m.file} · ${m.set} · ${m.bpm} bpm · beat ${m.beat_strength} · from ${m.usable_from_s} s · ${(m.mood || []).join('/')} · ${m.title}${m.note ? ` (${m.note})` : ''}`).join('\n')}
 ${video.intake?.music?.own ? `The user brought their own track (${video.intake.music.own.title}): every direction uses it, with music file "own"; say in why how the direction fits it.` : video.intake?.music?.file ? `The user heard and picked ${video.intake.music.file} at intake: every direction uses it; say in why how the direction fits it.` : 'Pick from this list only: the energetic set for brisk or high energy, the calm set for calm or still.'}
+
+${fxPromptSection()}
 
 # Shot blueprints (id: serves)
 ${blueprints.map((b) => `${b.id}: ${b.roles}`).join('; ')}

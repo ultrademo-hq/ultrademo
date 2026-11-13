@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const agentMode = () => process.env.ULTRADEMO_MODE === 'agent';
+export const agentMode = () => process.env.ULTRADEMO_MODE === 'agent' || (process.env.ULTRADEMO_MODE !== 'api' && !process.env.OPENROUTER_API_KEY);
 
 /** Point the tasks at a project unless something already did. */
 export function useProjectTasks(projectDir) {
@@ -90,10 +90,12 @@ export function writeTask(dir, name, body) {
     '',
   ].join('\n');
   // the same request again (a re-run) leaves the file as it was, so an answer written after it still reads as newer
-  let same = false;
-  try { same = fs.readFileSync(task, 'utf8') === doc; } catch {}
+  let before = null;
+  try { before = fs.readFileSync(task, 'utf8'); } catch {}
+  const same = before === doc;
   if (!same) fs.writeFileSync(task, doc);
-  return { task, answer, format };
+  // changed: there was a task for this call and it asked something else
+  return { task, answer, format, changed: before !== null && !same };
 }
 
 /**
@@ -116,7 +118,12 @@ export function agentFetch(dir = process.env.ULTRADEMO_TASKS_DIR) {
   return async (url, init) => {
     const body = JSON.parse(init.body);
     const name = init?.headers?.[CALL_HEADER] || 'call';
-    const { task, answer } = writeTask(dir, name, body);
+    const { task, answer, changed } = writeTask(dir, name, body);
+    // a changed request (another video style picked, an edited brief) needs a new answer: the one on disk answered the
+    // old task. It is kept beside it as <name>.answer-before.*; a second request in the same run is a correction instead
+    if (changed && !seen.has(name) && fs.existsSync(answer)) {
+      try { fs.renameSync(answer, answer.replace(/\.answer\.(json|txt)$/, '.answer-before.$1')); } catch {}
+    }
     if (!fs.existsSync(answer)) throw new AwaitingAgent(task, answer);
     // a second request for the same call in one run is the step asking for a correction: the file has not changed, so say so plainly
     const n = (seen.get(name) || 0) + 1;

@@ -4,6 +4,7 @@
 // 127.0.0.1 only; writes are same-origin JSON. Pictures and final files are served only from the projects, brands and
 // font folders. Each change also rewrites the saved copy (ultrademo-dashboard.html).
 //   node plan/dashboard/serve.mjs [--port 4320] [--no-open]
+import { refuseForeignHost } from '../localhost.mjs';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -14,7 +15,8 @@ import { writeDashboard } from './build.mjs';
 import { BRANDS_DIR, readBrandProfile } from '../brands.mjs';
 import { updateLearning, addLearning, keepLearnings } from '../learnings.mjs';
 import { startNewVideo } from '../newvideo.mjs';
-import { listenOnFree, stopPages } from '../pages.mjs';
+import { listenOnFree, stopPages, recordDashboard, reopenPage } from '../pages.mjs';
+import { notesRoutes } from '../notes.mjs';
 import { openInBrowser } from '../open.mjs';
 import { sendUi } from '../intake/serve.mjs';
 
@@ -41,8 +43,15 @@ export function startServer({ port = LIVE_PORT, host = '127.0.0.1', projectsDir 
   projectsDir = path.resolve(projectsDir);
   const saved = () => { try { if (path.basename(projectsDir) === 'projects') writeDashboard({ projectsDir, brandsDir }); } catch {} };
   const server = http.createServer(async (req, res) => {
+    if (refuseForeignHost(req, res)) return; // D-106: only requests addressed to this machine
     try {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+      if (url.pathname === '/api/notes') {
+        const name = String(url.searchParams.get('project') || '');
+        const dir = path.join(projectsDir, name);
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(name) || path.dirname(dir) !== projectsDir || !fs.existsSync(dir)) return sendJson(res, 404, { ok: false, error: 'No such video.' });
+        if (await notesRoutes(req, res, url, dir, { sendJson, readBody, sameOrigin, brandsDir })) return;
+      }
       if (req.method === 'GET' && url.pathname === '/') return send(res, 200, renderDashboard(collectDashboard({ projectsDir, brandsDir }), { live: true }));
       if (req.method === 'GET' && url.pathname === '/api/ping') return sendJson(res, 200, { ok: true });
       if (req.method === 'GET' && url.pathname.startsWith('/ui/')) return sendUi(res, url.pathname);
@@ -92,6 +101,17 @@ export function startServer({ port = LIVE_PORT, host = '127.0.0.1', projectsDir 
         if (!r) return sendJson(res, 400, { ok: false, error: 'Write the learning first.' });
         saved(); return sendJson(res, 200, { ok: true });
       }
+      // 2026-11-11: open a video's page without Claude: its running page, or the page server for where it stands,
+      // started here (127.0.0.1 only, a folder under projects/, one of our own page scripts; see pages.mjs reopenPage)
+      if (url.pathname === '/api/open-page') {
+        const name = String(body.project || '');
+        const dir = path.join(projectsDir, name);
+        if (!/^[A-Za-z0-9][\w.-]{0,120}$/.test(name) || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return sendJson(res, 404, { ok: false, error: 'No such video.' });
+        const r = await reopenPage(dir);
+        if (!r) return sendJson(res, 409, { ok: false, error: 'This step needs your AI session: copy the line and paste it into your AI session (Claude Code or Codex).' });
+        console.log(`Opened the ${r.kind} page for ${name}: ${r.url}`);
+        return sendJson(res, 200, { ok: true, ...r });
+      }
       if (url.pathname === '/api/learnings-keep') {
         const name = String(body.project || '');
         const dir = path.join(projectsDir, name);
@@ -131,6 +151,7 @@ export function startServer({ port = LIVE_PORT, host = '127.0.0.1', projectsDir 
     server.on('error', reject);
     server.listen(port, host, () => {
       const { port: p } = server.address();
+      if (port !== 0) recordDashboard(projectsDir, `http://${host}:${p}/`);
       resolve({ server, port: p, url: `http://${host}:${p}/`, close: () => new Promise((r) => server.close(() => r())) });
     });
   });

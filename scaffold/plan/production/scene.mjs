@@ -18,6 +18,7 @@
 // Run from scaffold/. Exit 3 means a task waits for the agent (the designer pass); nothing failed.
 
 import { canvasOf, verticalNote } from './canvas.mjs';
+import { notesForPrompt } from '../notes.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -83,13 +84,15 @@ function writeBrief(projectDir, plan, i) {
   const prev = plan.scenes[i - 1] || null;
   const next = plan.scenes[i + 1] || null;
   const assets = sceneAssets(plan, s, projectDir);
+  // D-101: the notes that follow the video (notes.json), for every scene
+  const notes = notesForPrompt(projectDir);
   const lines = [
     `# Brief: ${s.id} · ${s.name}`,
     '',
     `Write \`production/scenes/${s.id}.html\` (a <style>, the <div id="root" data-composition-id="${s.id}" data-duration="${s.duration_s}"> and one <script> that registers window.__timelines["${s.id}"]; no <template>, the build adds it with the kit). Rules: plan/production/AGENT.md.`,
     '',
     `- Duration ${s.duration_s} s, at ${s.start_s}–${(s.start_s + s.duration_s).toFixed(2)} s in the video. Beat: ${s.beat}. Role: ${s.role || '—'}.`,
-    `- In from ${prev ? `${prev.id} by a ${s.transition_in}` : 'nothing (the first scene: frame 0 shows the headline)'}; out to ${next ? `${next.id} by a ${next.transition_in}` : 'the end (fade to the ground in the last 0.25 s)'}.`,
+    `- In from ${prev ? `${prev.id} by a ${s.transition_in}` : 'nothing (the first scene: frame 0 shows the headline)'}; out to ${next ? `${next.id} by a ${next.transition_in}` : 'the end (it ends on its last frame in full colour, no fade)'}.`,
     `- Headline "${s.copy.headline}"${s.copy.accent ? ` (accent: "${s.copy.accent}")` : ''}${s.copy.sub ? `; sub "${s.copy.sub}"` : ''}; at most ${s.copy.words_max} words. It must stay readable to ${s.reads.length ? s.reads.map((r) => `${r.to_s} s`).join(', ') : 'the end'} (each read window's end, less 0.1 s).`,
     `- Layout: ${s.layout}`,
     ...tutorialBriefLines(plan, s),
@@ -102,6 +105,7 @@ function writeBrief(projectDir, plan, i) {
     `- Carry into the next scene: ${s.carry ? `${s.carry.element}: ${s.carry.action}` : 'none'}.`,
     ...(i === 0 && plan.direction.thumbnail?.intro ? [`- Opens on the thumbnail: show \`assets/thumbnail-intro.png\` full frame from 0 to about 1.5 s (it is the video's first frame and the player's poster), then move into this scene: the title steps aside and the scene's own content takes the frame (no hard cut). The 1.5 s comes out of this scene; its words and timings after that stay as planned.`] : []),
     `- Canvas: ${canvasOf(plan).label}: data-width="${canvasOf(plan).W}" data-height="${canvasOf(plan).H}" on #root.${canvasOf(plan).vertical ? ` ${verticalNote(canvasOf(plan))}` : ''}`,
+    ...(notes ? ['- Notes for this video (notes.json; follow them unless one conflicts with the truth rules, and say so in the loop log when you cannot):', ...notes.split('\n').map((l) => `  ${l}`)] : []),
     '',
     'Loop: build, look at the strip and the full-size stills, fix, repeat until clean; then check; then the joins with the neighbours that exist.',
     '',
@@ -111,6 +115,19 @@ function writeBrief(projectDir, plan, i) {
 }
 
 async function prepare(projectDir) {
+  // a direction confirmed again after production started: the earlier kit and scenes are set aside (visible, not
+  // deleted) and production starts afresh from the new plan
+  const confirmedFile = path.join(projectDir, 'direction', 'confirmed.json');
+  const confirmedMtime = fs.existsSync(confirmedFile) ? fs.statSync(confirmedFile).mtimeMs : 0;
+  let started = null;
+  try { started = JSON.parse(fs.readFileSync(path.join(projectDir, 'production', 'started.json'), 'utf8')); } catch {}
+  if (started && confirmedMtime > (Number(started.confirmed_mtime) || 0) + 1000) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = path.join(projectDir, '_before', stamp);
+    fs.mkdirSync(dest, { recursive: true });
+    for (const d of ['kit', 'production']) if (fs.existsSync(path.join(projectDir, d))) fs.renameSync(path.join(projectDir, d), path.join(dest, d));
+    console.log(`The direction was confirmed again: the earlier kit and scenes are set aside in ${dest}; production starts afresh.`);
+  }
   const plan = loadPlan(projectDir);
   useProjectTasks(projectDir);
   process.env.ULTRADEMO_MODE = 'agent';
@@ -130,6 +147,8 @@ async function prepare(projectDir) {
   }
   plan.scenes.forEach((_, i) => writeBrief(projectDir, plan, i));
   fs.mkdirSync(path.join(projectDir, 'production', 'scenes'), { recursive: true });
+  // what this production was built from: a later confirm makes it stale (wait.mjs staleStep)
+  fs.writeFileSync(path.join(projectDir, 'production', 'started.json'), JSON.stringify({ at: new Date().toISOString(), confirmed_mtime: confirmedMtime }, null, 1) + '\n');
   console.log(`kit: ${KIT_FILES.map((f) => path.join(projectDir, f)).join(', ')}`);
   console.log(`briefs: ${path.join(projectDir, 'production', 'briefs')} (${plan.scenes.length})`);
   console.log(`next: write ${path.join(projectDir, 'production', 'scenes', `${plan.scenes[0].id}.html`)}, then node plan/production/scene.mjs build ${projectDir} ${plan.scenes[0].id}`);
@@ -324,6 +343,18 @@ if (isMain) {
   const [cmd, projectArg, arg3, arg4] = process.argv.slice(2);
   if (!cmd || !projectArg) { console.error('usage: node plan/production/scene.mjs prepare|build|check|joins|whole|status|vertical|cut|chapters <project> [...]'); process.exit(2); }
   const projectDir = path.resolve(projectArg);
+  // the user went back and redid an earlier step: building on stops here and says what to do (exit code 5)
+  {
+    const { staleStep, redoMessage } = await import('../wait.mjs');
+    const st = staleStep(projectDir);
+    if (st && ['build', 'check', 'joins', 'whole'].includes(cmd)) {
+      let director = false;
+      try { director = JSON.parse(fs.readFileSync(path.join(projectDir, 'plan.json'), 'utf8')).video?.autonomy === 'director'; } catch {}
+      console.error(redoMessage(st, projectArg, { director }));
+      process.exit(5);
+    }
+    if (st && cmd === 'status') console.log(`Note: ${redoMessage(st, projectArg)}`);
+  }
   (async () => {
     if (cmd === 'prepare') await prepare(projectDir);
     else if (cmd === 'build') process.exitCode = build(projectDir, arg3, arg4) || process.exitCode || 0;

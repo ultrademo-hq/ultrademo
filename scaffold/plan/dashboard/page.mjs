@@ -1,6 +1,7 @@
 // dashboard/page.mjs — ultrademo-dashboard.html: Videos, Brands and Learnings, from collectDashboard(). Two forms of
 // the same page: live (served by dashboard/serve.mjs, the buttons act) and saved (the file beside projects/, rewritten
 // after every step, opens from Finder; its buttons wait for the live page).
+import { localDay } from '../day.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -8,7 +9,9 @@ import { uiCssInline, udHeadInline } from '../ui/inline.mjs';
 import { DASH_CSS } from './style.mjs';
 import { STAGES } from './data.mjs';
 import { UD_HEAD } from '../intake/page.mjs';
+import { notesUi } from '../notes-ui.mjs';
 import { updateCommand } from '../updates.mjs';
+import { FAVICON } from '../ui/favicon.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const SCAFFOLD = path.join(HERE, '..', '..');
@@ -42,14 +45,14 @@ function ago(ms, nowIso) {
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   if (s < 172800) return 'yesterday';
   if (s < 7 * 86400) return `${Math.floor(s / 86400)} days ago`;
-  return new Date(ms).toISOString().slice(0, 10);
+  return localDay(new Date(ms));
 }
 
 /** A newer version, from the daily check (plan/updates.mjs): what is new and the command; nothing installs by itself. */
 export function updateBanner(u) {
   if (!u?.newer) return '';
   const cmd = u.git ? updateCommand(path.resolve(SCAFFOLD, '..')) : '';
-  return `<div class="upd" role="status"><b>Ultrademo ${e(u.latest)} is out</b><span>${u.notes ? `${e(u.notes)}. ` : ''}You have ${e(u.current)}. Ask Claude to update, or run:</span>${cmd ? `<code>${e(cmd)}</code>` : '<a href="https://github.com/ultrademo-hq/ultrademo/releases">Download the new version</a>'}</div>`;
+  return `<div class="upd" role="status"><b>Ultrademo ${e(u.latest)} is out</b><span>${u.notes ? `${e(u.notes)}. ` : ''}You have ${e(u.current)}. Ask your AI session to update, or run:</span>${cmd ? `<code>${e(cmd)}</code>` : '<a href="https://github.com/ultrademo-hq/ultrademo/releases">Download the new version</a>'}</div>`;
 }
 
 export function renderDashboard(data, { live = false } = {}) {
@@ -68,19 +71,26 @@ export function renderDashboard(data, { live = false } = {}) {
     const page = pageFor(v);
     const play = (f) => (live ? `/watch?p=${encodeURIComponent(path.relative(SCAFFOLD, f))}` : pathToFileURL(f).href);
     const dl = (f) => (live ? `/final?p=${encodeURIComponent(path.relative(SCAFFOLD, f))}` : pathToFileURL(f).href);
-    const acts = [
+    const acts = v.queued ? [
+      v.live.intake ? `<a class="btn dark" href="${e(v.live.intake)}">Open its brief</a>` : live ? `<button type="button" class="btn dark vopen" data-project="${e(v.project)}">Start this one</button>` : ask(`start the queued video in projects/${v.project}`, 'Start in Claude Code', 'dark'),
+      live ? `<button type="button" class="quiet vnotes" data-project="${e(v.project)}" data-title="${e(`${v.brand} · ${v.title}`)}">Notes${v.notes ? ` (${e(v.notes)})` : ''}</button>` : '',
+      live ? `<button type="button" class="quiet vremove" data-project="${e(v.project)}" data-title="${e(`${v.brand} · ${v.title}`)}">Remove</button>` : '',
+    ].join('') : [
       v.watch ? `<a class="btn dark" href="${e(play(v.watch))}" target="_blank" rel="noopener">${v.watchVertical ? 'Watch 16:9' : 'Watch'}</a>` : '',
       v.watchVertical ? `<a class="btn dark" href="${e(play(v.watchVertical))}" target="_blank" rel="noopener">Watch 9:16</a>` : '',
       ...(v.cuts || []).map((f) => `<a class="btn" href="${e(play(f))}" target="_blank" rel="noopener">Watch the ${e(path.basename(f).replace(/^cut-(\d+)\.mp4$/, '$1 s'))} cut</a>`),
-      page ? `<a class="btn ${v.watch ? '' : 'dark'}" href="${e(page)}" target="_blank" rel="noopener">${v.stage === 5 ? 'Open Delivery' : 'Open its page'}</a>` : '',
-      v.stage < 5 && !page ? (live ? `<button type="button" class="copy" data-copy="${e(resume(v))}" title="Paste into Claude Code to carry on">Copy a line for Claude</button>` : ask(`continue the video "${v.title}" for ${v.brand} in projects/${v.project}`, 'Continue in Claude Code', v.watch ? '' : 'dark')) : '',
+      // its page in this tab: the running one, or (live dashboard) started here without Claude
+      page ? `<a class="btn ${v.watch ? '' : 'dark'}" href="${e(page)}">${v.stage === 5 ? 'Open Delivery' : v.stage === 4 ? 'Open Review' : 'Open its page'}</a>`
+        : live ? `<button type="button" class="btn ${v.watch ? '' : 'dark'} vopen" data-project="${e(v.project)}">${v.stage === 5 ? 'Open Delivery' : v.stage === 4 ? 'Open Review' : 'Open its page'}</button>` : '',
+      v.stage < 5 && !page ? (live ? `<button type="button" class="copy" data-copy="${e(resume(v))}" title="Paste into your AI session (Claude Code or Codex) to carry on">Copy a line for your AI session</button>` : ask(`continue the video "${v.title}" for ${v.brand} in projects/${v.project}`, 'Continue in Claude Code', v.watch ? '' : 'dark')) : '',
       ...[[v.final, v.finalVertical ? 'Download 16:9' : 'Download'], [v.finalVertical, 'Download 9:16']].filter(([f]) => f).map(([f, l]) => `<a class="btn" href="${e(dl(f))}" download>${l}</a>`),
+      live ? `<button type="button" class="quiet vnotes" data-project="${e(v.project)}" data-title="${e(`${v.brand} · ${v.title}`)}">Notes${v.notes ? ` (${e(v.notes)})` : ''}</button>` : '',
       live ? `<button type="button" class="quiet vremove" data-project="${e(v.project)}" data-title="${e(`${v.brand} · ${v.title}`)}">Remove</button>` : '',
     ].join('');
-    return `<article class="vrow" data-brand="${e(v.brandSlug || '')}" data-stage="${v.stage}"><div class="vthumb">${v.still ? (v.watch ? `<a href="${e(play(v.watch))}" target="_blank" rel="noopener" title="Watch"><img src="${e(url(v.still))}" alt="" loading="lazy"></a>` : `<img src="${e(url(v.still))}" alt="" loading="lazy">`) : '<span>Not built yet</span>'}</div>
+    return `<article class="vrow${v.queued ? ' queued' : ''}" data-brand="${e(v.brandSlug || '')}" data-stage="${v.stage}"${v.queued ? ' data-queued="1"' : ''}><div class="vthumb">${v.still ? (v.watch ? `<a href="${e(play(v.watch))}" target="_blank" rel="noopener" title="Watch"><img src="${e(url(v.still))}" alt="" loading="lazy" onerror="this.remove()"></a>` : `<img src="${e(url(v.still))}" alt="" loading="lazy" onerror="this.remove()">`) : '<span>Not built yet</span>'}</div>
 <div class="vmain"><div class="vtitle"><b>${e(v.brand)}</b> · ${e(v.title)}</div><div class="muted small">${e(v.type || v.project)}${v.updated ? ` · updated ${e(ago(v.updated, data.at))}` : ''}</div><div class="vnote">${e(v.note)}</div></div>
-<div class="vstage">${stageDots(v.stage)}</div><div class="vacts">${acts}</div></article>`;
-  }).join('') || '<p class="muted">No videos yet. Press Start a new video, or type /ultrademo in Claude Code.</p>';
+<div class="vstage">${v.queued ? '<span class="sdots"><b>Queued</b></span>' : stageDots(v.stage)}</div><div class="vacts">${acts}</div></article>`;
+  }).join('') || '<p class="muted">No videos yet. Press Start a new video, or type /ultrademo in your AI session.</p>';
 
   const item = (label, text) => (text ? `<li><span class="sl">${e(label)}</span><span class="st clamp">${text}</span></li>` : '');
   const brandCards = brands.map((b) => {
@@ -115,7 +125,7 @@ ${b.proposed.map((p) => `<div class="lprop" data-project="${e(p.project)}"><div>
 <form class="ladd" data-brand="${e(b.slug)}"><select${dis}>${KINDS.map((k) => `<option>${e(k)}</option>`).join('')}</select><input type="text" placeholder="Add a learning for the next ${e(b.name)} video" maxlength="400"${dis}><button type="submit"${dis}>Add</button></form></section>`).join('') || '<p class="muted">Learnings appear here once a video is approved and you keep some.</p>';
 
   const families = brands.flatMap((b) => [b.fonts?.display, b.fonts?.body]);
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ultrademo dashboard</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}<title>Ultrademo dashboard</title>
 ${live ? '<link rel="stylesheet" href="/ui/ui.css">' : ''}<style>${live ? '' : uiCssInline()}
 ${DASH_CSS}
 ${fontFaces(families, url)}
@@ -131,9 +141,9 @@ button[disabled],input[disabled],select[disabled]{opacity:.55;cursor:not-allowed
 <div class="ud-pin">${live ? UD_HEAD : udHeadInline()}</div>
 <div class="top"><div><h1>Your videos</h1>${live ? '<span class="live"><i></i>Live: the buttons work while Claude Code runs the skill.</span>' : `<span class="live off" id="saved-note"><i></i>A saved copy, written ${e(data.at.slice(0, 16).replace('T', ' '))}. Its buttons open Claude Code with the request typed in: press Enter there.</span>`}</div>${live ? '<button class="newbtn newvid" type="button" data-brand="">Start a new video</button>' : `<span class="topacts">${ask('open the dashboard', 'Open in Claude Code')}${ask('start a new video', 'Start a new video', 'newbtn')}</span>`}</div>
 ${updateBanner(data.update)}<nav class="tabs" role="tablist"><button class="on" data-view="videos">Videos<span class="n">${videos.length}</span></button><button data-view="brands">Brands<span class="n">${brands.length}</span></button><button data-view="learnings">Learnings${proposedCount ? `<span class="waiting">${proposedCount} to confirm</span>` : ''}</button></nav>
-<section class="view" id="v-videos"><div class="filters"><button class="on" data-f="">All</button>${brands.map((b) => `<button data-f="b:${e(b.slug)}">${e(b.name)}</button>`).join('')}<button data-f="s:open">In progress</button><button data-f="s:final">Final</button></div><div class="vlist">${videoRows}</div></section>
+<section class="view" id="v-videos"><div class="filters"><button class="on" data-f="">All</button>${brands.map((b) => `<button data-f="b:${e(b.slug)}">${e(b.name)}</button>`).join('')}<button data-f="s:open">In progress</button>${videos.some((v) => v.queued) ? '<button data-f="s:queued">Queued</button>' : ''}<button data-f="s:final">Final</button></div><div class="vlist">${videoRows}</div></section>
 <section class="view" id="v-brands" hidden><div class="bgrid">${brandCards}</div></section>
-<section class="view" id="v-learnings" hidden>${learnBlocks}<p class="foot">Claude uses only the learnings that are on. Each one says which video it came from; switch it off for a while, edit it, or remove it.</p></section>
+<section class="view" id="v-learnings" hidden>${learnBlocks}<p class="foot">Ultrademo uses only the learnings that are on. Each one says which video it came from; switch it off for a while, edit it, or remove it.</p></section>
 <p class="foot">Usage statistics are ${data.telemetry ? 'on: anonymous counts of steps, video types and formats, never your product, words or frames. Switch off: <code>npm run telemetry -- off</code>' : 'off'}.</p>
 <p class="foot">${live ? 'The saved copy, ultrademo-dashboard.html beside the projects folder, is rewritten after every step, so it opens from Finder even when nothing is running.' : 'This file is rewritten after every step.'}</p>
 </main>
@@ -146,15 +156,23 @@ ${updateBanner(data.update)}<nav class="tabs" role="tablist"><button class="on" 
   $$('.filters button').forEach(function(b){ b.addEventListener('click', function(){
     $$('.filters button').forEach(function(x){ x.classList.toggle('on', x === b); });
     var f = b.dataset.f;
-    $$('.vrow').forEach(function(r){ var s = Number(r.dataset.stage); r.hidden = f.indexOf('b:') === 0 ? r.dataset.brand !== f.slice(2) : f === 's:open' ? s >= 5 : f === 's:final' ? s < 5 : false; });
+    $$('.vrow').forEach(function(r){ var s = Number(r.dataset.stage); r.hidden = f.indexOf('b:') === 0 ? r.dataset.brand !== f.slice(2) : f === 's:open' ? s >= 5 || !!r.dataset.queued : f === 's:queued' ? !r.dataset.queued : f === 's:final' ? s < 5 : false; });
   }); });
   $$('.showall').forEach(function(b){ b.addEventListener('click', function(){ var c = b.closest('.bcard'); c.classList.toggle('open'); b.textContent = c.classList.contains('open') ? 'Show less' : 'Show all'; }); });
   $$('.golearn').forEach(function(b){ b.addEventListener('click', function(){ view('learnings'); var t = document.getElementById('learn-' + b.dataset.brand); if (t) t.scrollIntoView({ behavior: 'smooth' }); }); });
-  $$('.copy').forEach(function(b){ b.addEventListener('click', function(){ (navigator.clipboard ? navigator.clipboard.writeText(b.dataset.copy) : Promise.reject()).then(function(){ b.textContent = 'Copied: paste it in Claude Code'; }, function(){ prompt('Copy this line into Claude Code:', b.dataset.copy); }); }); });
+  $$('.vopen').forEach(function(b){ b.addEventListener('click', function(){
+    var label = b.textContent; b.disabled = true; b.textContent = 'Opening…';
+    fetch('/api/open-page', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ project: b.dataset.project }) }).then(function(r){ return r.json(); }).then(function(j){
+      if (j.ok && j.url) { location.href = j.url; return; }
+      b.disabled = false; b.textContent = label;
+      var m = document.createElement('span'); m.className = 'small muted'; m.style.marginLeft = '6px'; m.textContent = j.error || 'Could not open it.'; b.after(m);
+    }).catch(function(){ b.disabled = false; b.textContent = label; });
+  }); });
+  $$('.copy').forEach(function(b){ b.addEventListener('click', function(){ (navigator.clipboard ? navigator.clipboard.writeText(b.dataset.copy) : Promise.reject()).then(function(){ b.textContent = 'Copied: paste it in your AI session'; }, function(){ prompt('Copy this line into your AI session:', b.dataset.copy); }); }); });
   $$('a.ask').forEach(function(a){ a.addEventListener('click', function(){
     try { navigator.clipboard.writeText(a.dataset.copy); } catch (err) {}
     var t = document.createElement('div'); t.className = 'toast';
-    t.textContent = 'Opening Claude Code with the request typed in: press Enter there. Nothing opened? The line is copied: paste it into Claude Code in the scaffold folder.';
+    t.textContent = 'Opening Claude Code with the request typed in: press Enter there. Nothing opened? The line is copied: paste it into your AI session (Claude Code or Codex) in the scaffold folder.';
     document.body.appendChild(t); setTimeout(function(){ t.remove(); }, 9000);
   }); });
   if (!LIVE) {
@@ -165,6 +183,8 @@ ${updateBanner(data.update)}<nav class="tabs" role="tablist"><button class="on" 
   function post(u, body){ return fetch(u, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body || {}) }).then(function(r){ return r.json(); }); }
   function done(j){ if (j && j.ok) location.reload(); else alert((j && j.error) || 'That did not work.'); }
   $$('.newvid').forEach(function(b){ b.addEventListener('click', function(){ b.disabled = true; b.textContent = 'Opening a brief…'; post('/api/new-video', { brand: b.dataset.brand || null }).then(function(j){ if (j.ok) location.href = j.url; else { b.disabled = false; alert(j.error); } }); }); });
+  // D-101: a video's notes, read and edited here without reopening any of its pages
+  $$('.vnotes').forEach(function(b){ b.addEventListener('click', function(){ if (window.udNotes) window.udNotes.open('/api/notes?project=' + encodeURIComponent(b.dataset.project), b.dataset.title); }); });
   $$('.vremove').forEach(function(b){ b.addEventListener('click', function(){
     if (!confirm('Remove "' + b.dataset.title + '" from the dashboard?\\n\\nIts pages stop and its folder moves to projects/_removed (with its final files, if any). Nothing is deleted: move it back from Finder, or empty _removed when you are sure.')) return;
     b.disabled = true; post('/api/remove', { project: b.dataset.project }).then(done);
@@ -183,5 +203,5 @@ ${updateBanner(data.update)}<nav class="tabs" role="tablist"><button class="on" 
   }); });
   $$('.ladd').forEach(function(f){ f.addEventListener('submit', function(ev){ ev.preventDefault(); var t = f.querySelector('input').value.trim(); if (!t) return; post('/api/learning-add', { brand: f.dataset.brand, kind: f.querySelector('select').value, text: t }).then(done); }); });
 })();
-</script></body></html>`;
+</script>${live ? notesUi(null, { tab: false }) : ''}</body></html>`;
 }

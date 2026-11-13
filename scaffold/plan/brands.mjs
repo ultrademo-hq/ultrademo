@@ -126,6 +126,33 @@ export function saveBrandProfile(profile, { projectDir = '', dir = BRANDS_DIR, n
   return { ...out, slug };
 }
 
+/** The brand of the brief a video was queued from (D-97), in the same shape as brandForBrief, for a brand that was
+ * never saved: its logo is copied into the new project, its colours, fonts and story come along. `from` is the source
+ * project's folder name, a sibling of projectDir; anything else is refused. */
+export function brandFromProject(from, projectDir) {
+  const name = String(from || '');
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(name)) return null;
+  const src = path.join(path.dirname(path.resolve(projectDir)), name);
+  if (path.dirname(src) !== path.dirname(path.resolve(projectDir)) || src === path.resolve(projectDir)) return null;
+  let video = null;
+  try { video = JSON.parse(fs.readFileSync(path.join(src, 'plan.json'), 'utf8')).video; } catch { return null; }
+  if (!video) return null;
+  const p = brandFromVideo(video, null);
+  let logo = null;
+  if (p.logo && /^assets\/brand\/logo(-own)?\.(svg|png|jpg|webp)$/.test(p.logo) && fs.existsSync(path.join(src, p.logo))) {
+    fs.mkdirSync(path.join(projectDir, 'assets', 'brand'), { recursive: true });
+    fs.copyFileSync(path.join(src, p.logo), path.join(projectDir, p.logo));
+    logo = p.logo;
+  }
+  return {
+    slug: '', from: name, name: p.name, url: p.url, product: p.name, product_type: p.product_type,
+    viewer: p.story.viewer || '', claim: p.story.claim || '', pain_point: p.story.pain_point || '', proof_moment: p.story.proof_moment || '', cta: p.story.cta || '',
+    exact: p.story.exact || { tagline: '', lines: [] },
+    brand: { logo, colors: p.colors || {}, fonts: p.fonts || {} },
+    tone: p.tone, voice: p.voice,
+  };
+}
+
 /** Use a saved brand in a project: its logo is copied into the project (assets/brand/) and the brief's fields are
  * returned, for the intake page to fill. */
 export function brandForBrief(slug, projectDir, dir = BRANDS_DIR) {

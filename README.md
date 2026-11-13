@@ -1,14 +1,34 @@
+<div align="center">
+
+**English** · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)
+
+<img src="docs/hero.webp" width="100%" alt="Ultrademo's launch video: your screens go in, you pick a direction, refine it and comment on the video, and the finished video comes out." />
+
 # Ultrademo
 
 **Demo videos that get your product noticed.**
 
 Studio-quality video made from your real product by AI, in a fraction of the time. A version for every channel, ready to post.
 
+```bash
+npx skills add ultrademo-hq/ultrademo -g -a claude-code
+```
+
+Then ask Claude Code: `/ultrademo launch video of https://your-product.com`. Installing alone shows nothing; the skill starts when you ask for a video.
+
+[Watch with sound](#watch-with-sound) · [Video types](#video-types) · [How it works](#how-it-works) · [Install](#install) · [Showcase](https://ultrademo.net/#showcase)
+
+*The video above is Ultrademo's launch video. Ultrademo made it, from its own screens.*
+
+</div>
+
 Point Ultrademo at your product (the live site or app, HTML mockups of a feature that is not live yet, screenshots or a Figma file) and ask for a video. Your agent writes the story, proposes directions for you to pick, builds every scene as code, looks at each frame, checks it, and fixes what is off. Then it adds the voice and music and hands you the video on a review page, where you comment on the video itself. When your product changes, run it again.
+
+## Watch with sound
 
 https://github.com/user-attachments/assets/b198ca47-1d43-44b1-b622-6d1d4b60afaf
 
-*The Ultrademo explainer, made with Ultrademo, from Ultrademo's own screens. More on [ultrademo.net](https://ultrademo.net/#showcase).*
+*The Ultrademo explainer, narrated, made with Ultrademo from Ultrademo's own screens. More on [ultrademo.net](https://ultrademo.net/#showcase).*
 
 ## What you get
 
@@ -63,6 +83,10 @@ claude
 ```
 
 Then ask: `/ultrademo launch video of https://your-product.com`. The first time, the skill asks before it sets up its workspace in `~/ultrademo` (about 10 minutes), then carries on with your video.
+
+Installing alone shows nothing: the skill starts when you ask for a video. **Asking Claude to install it for you?** Put the video in the same message and it carries straight on:
+
+> Install the Ultrademo skill with `npx skills add ultrademo-hq/ultrademo -g -a claude-code`, then make an explainer video of https://your-product.com
 
 **Claude desktop app:** open the **Code** tab, choose any folder and send:
 

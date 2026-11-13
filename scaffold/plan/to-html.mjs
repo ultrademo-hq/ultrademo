@@ -3,6 +3,8 @@
 //   --assets  the project folder whose relative asset paths (images, fonts) the plan refers to
 import fs from 'node:fs';
 import path from 'node:path';
+import { FAVICON } from './ui/favicon.mjs';
+import { fxLine } from './fx.mjs';
 
 const args = process.argv.slice(2);
 const planPath = args.find((a) => !a.startsWith('--'));
@@ -110,7 +112,7 @@ const sceneCards = scenes.map((s, i) => {
   const numbers = (s.numbers || []).map((n) => { const cid = n.claim || n.claim_id || n.cite || n.source || n.source_id; const cl = (v.claims || []).find((c) => c.id === cid); return `<li><b>${e(n.value)}</b>${cl ? `<span class="muted small"> · ${e(cl.text)}</span>` : ''}</li>`; }).join('');
   const motion = (s.motion || []).map((m) => { const { t, text } = splitMotion(motionLine(m)); return `<tr><td class="mono">${e(t)}</td><td>${e(text.replace(/\(→ [^)]*\)/g, '').trim())}</td></tr>`; }).join('');
   const reads = (s.reads || []).map((r) => `<tr><td class="mono">${e(r.from_s)}–${e(r.to_s)} s</td><td>${e(r.what)}</td></tr>`).join('');
-  const sound = s.sound ? [s.sound.cue ? `cue: ${s.sound.cue}` : '', s.sound.sfx?.length ? `effects: ${s.sound.sfx.join(', ')}` : 'effects: none'].filter(Boolean).join(' · ') : '';
+  const sound = s.sound ? [s.sound.cue ? `cue: ${s.sound.cue}` : '', Array.isArray(s.sound.fx) ? `effects: ${s.sound.fx.length ? fxLine(s.sound.fx) : 'none'}` : s.sound.sfx?.length ? `effects: ${s.sound.sfx.join(', ')}` : 'effects: none'].filter(Boolean).join(' · ') : '';
   const attrs = [
     s.layout ? ['Layout', e(s.layout)] : null,
     s.content?.length ? ['On screen, in order', `<ol>${s.content.map((c) => `<li>${e(c)}</li>`).join('')}</ol>`] : null,
@@ -142,7 +144,7 @@ const sceneCards = scenes.map((s, i) => {
 </details>`;
 }).join('\n');
 
-const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Video plan · ${e(v.product || '')}</title>
+const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}<title>Video plan · ${e(v.product || '')}</title>
 <style>
 ${fontFaces.join('\n')}
 :root{--bg:#f6f3ec;--card:#fffdf8;--ink:#1d1c1a;--muted:#6d6a63;--line:#e3ded2;--accent:#f2c200;--good:#2f7a3d;--bad:#b23a2e;--mid:#9a6b00}

@@ -4,6 +4,8 @@ import path from 'node:path';
 // textContent; the data block is JSON with "<" escaped.
 import { UD_HEAD, progressBar } from '../intake/page.mjs';
 import { safeLink } from '../updates.mjs';
+import { FAVICON } from '../ui/favicon.mjs';
+import { notesUi } from '../notes-ui.mjs';
 
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c');
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -17,7 +19,7 @@ export function offerLink(offer, from, version = '') {
 }
 const offerHtml = (offer, from, version) => { const href = offerLink(offer, from, version); return href ? `<span class="rv-offer">${esc(offer.text)} <a class="rv-btn" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(offer.button)}</a></span>` : ''; };
 
-export function renderReviewPage({ project, videos, video, videoPath = null, title, scenes, tokens = null, approved = null, thumbs = [], cuts = [], offer = null, version = '', credit = null, view = 'auto' }) {
+export function renderReviewPage({ formatLater = null, project, videos, video, videoPath = null, title, scenes, tokens = null, approved = null, thumbs = [], cuts = [], offer = null, version = '', credit = null, view = 'auto', transcript = null, nextUp = null }) {
   const isCut = /^cut-\d+\.mp4$/.test(video?.name || '');
   const cutFinal = isCut ? cuts.find((c) => c.video === video.name) : null;
   const final = !/^cut-\d+\.mp4$/.test(video?.name || '') && approved && video && (approved.video === video.name || (approved.videos || []).includes(video.name)) ? approved : null;
@@ -30,6 +32,12 @@ export function renderReviewPage({ project, videos, video, videoPath = null, tit
   const anyFinal = approved && approved.final ? approved : null;
   const delivery = Boolean(anyFinal) && view !== 'review';
   const qs = anyFinal ? '&review=1' : '';
+  // D-116: a vertical version made after approval: it opens first, the landscape keeps its Approved badge, and it is
+  // approved on its own (unless the landscape was rendered again after its approval: then one approval finishes both)
+  const later = Boolean(formatLater?.laterReady && anyFinal);
+  const keepL = later && !formatLater.landscapeChanged;
+  const onlyV = keepL && isV;
+  const okBadge = (d) => `<span class="rv-okb" title="Approved ${esc(d)}">✓ Approved</span>`;
   const cutVids = videos.filter((v) => /^cut-\d+\.mp4$/.test(v.name));
   const restVids = videos.filter((v) => !formats.includes(v.name) && !/^cut-\d+\.mp4$/.test(v.name) && !(hasV ? false : v.name === 'video.mp4'));
   const cutLabel = (n) => n.replace(/^cut-(\d+)\.mp4$/, '$1 s cut');
@@ -39,16 +47,16 @@ export function renderReviewPage({ project, videos, video, videoPath = null, tit
     ...cutVids.map((v) => ({ name: v.name, label: cutLabel(v.name), meta: hasV ? '9:16' : '', tall: hasV })),
   ];
   const shape = (tall) => `<span class="rv-shape" aria-hidden="true"><i style="${tall ? 'width:10px;height:17px' : 'width:22px;height:13px'}"></i></span>`;
-  const tabRow = tabs.length > 1 || hasV ? `<div class="rv-tabs" role="tablist" aria-label="Format">${tabs.map((t) => `<a role="tab" class="rv-tab" href="?v=${esc(t.name)}${qs}" aria-selected="${t.name === video?.name}">${shape(t.tall)}${esc(t.label)}${t.meta ? ` <small>${esc(t.meta)}</small>` : ''}</a>`).join('')}${hasV && !isCut ? `<button type="button" class="rv-tab" id="rv-sbs" aria-pressed="false" title="Play the other format beside this one, in step"><span class="rv-shape" aria-hidden="true"><i style="width:18px;height:11px"></i><i style="width:8px;height:14px"></i></span>Side by side</button>` : ''}</div>` : '';
+  const tabRow = tabs.length > 1 || hasV ? `<div class="rv-tabs" role="tablist" aria-label="Format">${tabs.map((t) => `<a role="tab" class="rv-tab" href="?v=${esc(t.name)}${qs}" aria-selected="${t.name === video?.name}">${shape(t.tall)}${esc(t.label)}${t.meta ? ` <small>${esc(t.meta)}</small>` : ''}${keepL && t.name === anyFinal.video ? okBadge(anyFinal.at.slice(0, 10)) : later && t.name === 'video-vertical.mp4' ? '<span class="rv-newb">New</span>' : ''}</a>`).join('')}${hasV && !isCut ? `<button type="button" class="rv-tab" id="rv-sbs" aria-pressed="false" title="Play the other format beside this one, in step"><span class="rv-shape" aria-hidden="true"><i style="width:18px;height:11px"></i><i style="width:8px;height:14px"></i></span>Side by side</button>` : ''}</div>` : '';
   // one approval finishes every format and cut
   const scope = [...(hasV ? ['16:9', '9:16'] : []), ...cutVids.map((v) => `the ${cutLabel(v.name)}`)];
   const scopeLine = scope.length > 1 ? `Approves all ${scope.length === 2 ? 'both' : scope.length === 3 ? 'three' : scope.length}: ${scope.slice(0, -1).join(', ')} and ${scope[scope.length - 1]}` : 'Keeps a dated final copy that stays as it is';
   const curLabel = (tabs.find((t) => t.name === video?.name) || { label: video?.name || '' }).label.toLowerCase();
   const dlMenu = videoPath ? `<div class="rv-dl"><button class="rv-btn" type="button" id="rv-dlbtn" aria-expanded="false" aria-haspopup="true">⤓ Download</button><div class="rv-dlmenu" id="rv-dlmenu" hidden><a id="rv-dl" href="/video/${esc(video.name)}" download="${esc(project)}-${esc(video.name)}">Download this version (${esc(curLabel)}, .mp4)</a><button type="button" id="rv-cpath">Copy the file path</button><code title="${esc(videoPath)}">…/${esc(videoPath.split(/[\\/]/).slice(-3).join('/'))}</code>${offer && offerLink(offer, 'review', version) ? `<a href="${esc(offerLink(offer, 'review', version))}" target="_blank" rel="noopener noreferrer">${esc(offer.text)} ${esc(offer.button)} ↗</a>` : ''}</div></div>` : '';
-  const data = { project, video: delivery ? null : video?.name || null, videoPath, scenes, formats: isCut ? [] : formats, approveAll: [...(hasV ? formats : video ? [video.name === 'video-vertical.mp4' ? 'video.mp4' : video.name] : []), ...cutVids.map((v) => v.name)].filter((n, i, a) => a.indexOf(n) === i && !(isCut && false)) };
+  const data = { project, video: delivery ? null : video?.name || null, videoPath, scenes, formats: isCut ? [] : formats, approveAll: onlyV ? ['video-vertical.mp4'] : [...(hasV ? formats : video ? [video.name === 'video-vertical.mp4' ? 'video.mp4' : video.name] : []), ...cutVids.map((v) => v.name)].filter((n, i, a) => a.indexOf(n) === i && !(isCut && false)), onlyV };
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Review · ${esc(title)}</title>
+${FAVICON}<title>Review · ${esc(title)}</title>
 <link rel="stylesheet" href="/ui/ui.css">
 <style>
 body{margin:0;background:var(--surface-soft);color:var(--text);font-family:var(--ud-body)}
@@ -58,6 +66,7 @@ main{max-width:1180px;margin:0 auto;padding:22px 28px 36px}
 .rv-top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:12px}
 .rv-top h1{font-family:var(--ud-display);font-weight:800;font-size:clamp(26px,3.4vw,34px);letter-spacing:-.035em;line-height:1.04;margin:8px 0 0}
 .rv-file{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:-6px 0 18px;font-size:14px}
+.dv-later{width:260px;border-style:dashed}.dv-later .dv-ph{display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;width:203px;height:360px;margin:0 auto;border-bottom:2px dashed var(--line);background:repeating-linear-gradient(135deg,transparent 0 12px,rgba(0,0,0,.03) 12px 24px);color:var(--text-muted);font:600 18px var(--font-mono)}.dv-later .dv-ph small{font:500 12px var(--ud-body)}.dv-later .body{flex-direction:row;align-items:center}
 .rv-flabel{font:500 12px var(--font-mono);letter-spacing:.1em;text-transform:uppercase;color:var(--text-muted)}
 .rv-file code{font:13px var(--font-mono);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:6px 10px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(640px,100%)}
 a.rv-btn{text-decoration:none;display:inline-block}
@@ -189,6 +198,10 @@ a.rv-btn{text-decoration:none;display:inline-block}
 .rv-head2 h1{font-family:var(--ud-display);font-weight:800;font-size:clamp(26px,3.4vw,34px);letter-spacing:-.035em;line-height:1.05;margin:6px 0 0}
 .rv-apwrap{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .rv-apwrap .rv-btn.primary{font-size:16px;padding:12px 22px}
+.rv-okb{display:inline-flex;align-items:center;gap:4px;margin-left:4px;padding:2px 8px;border-radius:999px;background:#e8f8f0;color:#0f6a40;border:1px solid #a6e9c9;font:700 12px var(--ud-body);white-space:nowrap}
+.rv-newb{display:inline-flex;margin-left:4px;padding:2px 8px;border-radius:999px;background:var(--ink,#111);color:#fff;font:700 12px var(--ud-body)}
+.dv-card .wait{display:block;font-size:13px;color:var(--text-muted)}
+#dv-later-ready{width:203px}#dv-later-ready .body{flex-direction:column;align-items:stretch;gap:10px}#dv-later-ready .body a{text-align:center}
 .rv-apnote{font-size:13px;color:var(--text-muted);max-width:360px;text-align:right}.rv-apnote.on{color:var(--text)}.rv-apnote a{color:var(--text)}
 .rv-row2{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .rv-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
@@ -220,6 +233,8 @@ a.rv-btn{text-decoration:none;display:inline-block}
 .dv-sec{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-flow);padding:16px 18px;margin-bottom:16px}
 .dv-sec h2{font-size:17px;margin:0 0 4px}.dv-sec > p{margin:0;font-size:13px;color:var(--text-muted)}
 .dv-thumbs{display:flex;gap:12px;flex-wrap:wrap;margin-top:10px}
+.dv-trtext{white-space:pre-wrap;font:400 14px/1.6 var(--ud-body,inherit);max-height:220px;overflow:auto;margin:10px 0 0;padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
+.dv-tracts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .dv-thumbs button{border:1px solid var(--line);background:var(--surface-soft);border-radius:10px;padding:6px;cursor:zoom-in;text-align:left;font:500 12px var(--font-mono);color:var(--text-muted)}
 .dv-thumbs img{display:block;height:110px;width:auto;border-radius:6px;margin-bottom:6px}
 .dv-lb{position:fixed;inset:0;z-index:40;background:rgba(12,14,9,.82);display:grid;place-items:center;padding:24px}
@@ -237,19 +252,20 @@ a.rv-btn{text-decoration:none;display:inline-block}
 <div class="ud-pin">${UD_HEAD}${progressBar(delivery ? 'delivery' : 'review')}</div>
  ${delivery ? (() => { const fs = [{ file: anyFinal.final, label: hasV ? 'Landscape' : 'Video', meta: `${hasV ? '16:9 · ' : ''}${anyFinal.length_s ? `${anyFinal.length_s} s · ` : ''}${mb(anyFinal.size_bytes)}`, tall: false, primary: true }, ...(anyFinal.final_vertical ? [{ file: anyFinal.final_vertical, label: 'Vertical', meta: `9:16${anyFinal.length_s ? ` · ${anyFinal.length_s} s` : ''}`, tall: true }] : []), ...cuts.map((c) => ({ file: c.final, label: cutLabel(c.video), meta: `${hasV ? '9:16 · ' : ''}${c.video.replace(/^cut-(\d+)\.mp4$/, '$1')} s`, tall: hasV }))]; const z = (t) => (t.match(/(\d+x\d+)\.png$/) || [])[1] || ''; const use = { '1280x720': 'YouTube', '1200x630': 'links', '1080x1080': 'feeds', '1080x1920': 'Shorts' }; return `
  <div class="dv-head"><div><div class="ud-eyebrow">Delivery</div><h1>Your video is final</h1><p>${esc(title)} · approved ${esc(anyFinal.at.slice(0, 10))}${anyFinal.length_s ? ` · ${esc(anyFinal.length_s)} s` : ''} · ${fs.length === 1 ? 'one file' : `${fs.length} formats`}${anyFinal.open_comments ? ` · ${esc(anyFinal.open_comments)} comment${anyFinal.open_comments === 1 ? '' : 's'} left open` : ''}. These copies stay as they are if the video is rendered again.</p></div>
- <div class="dv-acts">${offer && offerLink(offer, 'delivery', version) ? `<a class="rv-btn" href="${esc(offerLink(offer, 'delivery', version))}" target="_blank" rel="noopener noreferrer" title="${esc(offer.text)}">Shareable link · ${esc(offer.button)}</a>` : ''}<button class="rv-btn dark" type="button" id="rv-new">Start a new video</button></div></div>
+ <div class="dv-acts">${offer && offerLink(offer, 'delivery', version) ? `<a class="rv-btn" href="${esc(offerLink(offer, 'delivery', version))}" target="_blank" rel="noopener noreferrer" title="${esc(offer.text)}">Shareable link · ${esc(offer.button)}</a>` : ''}<button class="rv-btn dark" type="button" id="rv-new"${nextUp ? ` title="${esc(nextUp.cover)}"` : ''}>${nextUp ? 'Next in queue' : 'Start a new video'}</button></div></div>
  <p class="rv-tokens" id="rv-new-st" aria-live="polite" style="margin:-10px 0 12px;text-align:right"></p>
- <div class="dv-formats">${fs.map((f) => `<div class="dv-card"><video class="${f.tall ? 'tall' : 'land'}" src="/final/${esc(f.file)}" controls preload="metadata" playsinline></video><div class="body"><div><b>${esc(f.label)}</b><span>${esc(f.meta)}</span></div><a class="rv-btn${f.primary ? ' primary' : ''}" href="/final/${esc(f.file)}" download="${esc(f.file)}" aria-label="Download the ${esc(f.label.toLowerCase())} video">⤓${f.primary ? ' Download' : ''}</a></div></div>`).join('')}</div>
+ <div class="dv-formats">${fs.map((f) => `<div class="dv-card"><video class="${f.tall ? 'tall' : 'land'}" src="/final/${esc(f.file)}" controls preload="metadata" playsinline></video><div class="body"><div><b>${esc(f.label)}</b><span>${esc(f.meta)}</span></div><a class="rv-btn${f.primary ? ' primary' : ''}" href="/final/${esc(f.file)}" download="${esc(f.file)}" aria-label="Download the ${esc(f.label.toLowerCase())} video">⤓${f.primary ? ' Download' : ''}</a></div></div>`).join('')}${later ? `<div class="dv-card" id="dv-later-ready"><video class="tall" src="/video/video-vertical.mp4" controls preload="metadata" playsinline></video><div class="body"><div><b>Vertical</b><span class="wait">9:16 · ready, not approved yet</span></div><a class="rv-btn dark" href="?v=video-vertical.mp4&review=1">Review and approve</a></div></div>` : ''}${formatLater?.missing ? `<div class="dv-card dv-later" id="dv-later"><div class="dv-ph" aria-hidden="true"><span>9:16</span><small id="dv-later-why">${formatLater.pending ? 'Being made' : formatLater.asked ? 'Not made yet' : 'Not in the brief'}</small></div><div class="body"><div><b>Vertical</b></div><button class="rv-btn dark" type="button" id="dv-later-go"${formatLater.pending ? ' disabled' : ''}>${formatLater.pending ? 'Making…' : 'Make it now'}</button></div></div>` : ''}</div>
  ${credit ? `<section class="dv-sec"><h2>Music credit</h2><p>This track's licence (${esc(credit.licence)}) asks you to credit the artist wherever the video is posted, for example in its description:</p><div class="rv-file" style="margin:10px 0 0"><code id="rv-credit-t">${esc(credit.text)}</code><button class="rv-btn" id="rv-ccredit">Copy credit</button></div></section>` : ''}
+ ${transcript?.text ? `<section class="dv-sec" id="dv-tr"><h2>Transcript</h2><p>What the voice says, with the time each line starts. For the video's description, a blog post or accessibility.</p><pre class="dv-trtext" id="dv-trtext">${esc(transcript.text.trim())}</pre><div class="dv-tracts"><a class="rv-btn dark" href="/transcript.txt" download>⤓ Transcript (.txt)</a><button class="rv-btn" type="button" id="dv-trcopy">Copy the words</button>${transcript.srt ? '<a class="rv-btn" href="/transcript.srt" download>⤓ Captions (.srt)</a>' : ''}${transcript.vtt ? '<a class="rv-btn" href="/transcript.vtt" download>⤓ Captions (.vtt)</a>' : ''}</div></section>` : ''}
  ${thumbs.length ? `<section class="dv-sec"><h2>Thumbnails</h2><p>Click one to see it full size.</p><div class="dv-thumbs">${thumbs.map((t) => `<button type="button" data-src="/thumbs/${esc(t)}" data-name="${esc(t)}"><img src="/thumbs/${esc(t)}" alt="">${esc(z(t).replace('x', ' × '))}${use[z(t)] ? ` · ${use[z(t)]}` : ''}</button>`).join('')}</div></section>` : ''}
  <section class="dv-sec" id="rv-learn" hidden><div id="rv-learn-open"><h2>Remember for the next video</h2><p id="rv-learn-sub">Untick what should not carry over, and edit any line. Kept learnings live with the brand; you can switch them off or remove them in the dashboard.</p>
  <ul class="rv-llist" id="rv-learn-list"></ul>
  <div class="rv-lacts"><button class="rv-btn dark" type="button" id="rv-learn-keep">Save for this brand</button><span class="rv-tokens" id="rv-learn-st" aria-live="polite"></span></div></div>
  <div class="dv-kept" id="rv-learn-done" hidden><span><span class="tick">✓</span><b id="rv-learn-n"></b> <span class="rv-tokens">The next video for this brand starts from them.</span></span><button class="rv-btn" type="button" id="rv-learn-edit">Edit</button></div></section>
- <div class="dv-foot"><a href="?review=1">← Back to review to change something</a>${tokens && (tokens.read || tokens.written) ? `<span class="rv-tokens" style="margin:0">Made with about ${fmtK(tokens.read)} tokens read and ${fmtK(tokens.written)} written by Claude on your plan (estimated; /cost in Claude Code shows the exact session use).</span>` : ''}</div>
+ <div class="dv-foot"><a href="?review=1">← Back to review to change something</a>${tokens && (tokens.read || tokens.written) ? `<span class="rv-tokens" style="margin:0">Made with about ${fmtK(tokens.read)} tokens read and ${fmtK(tokens.written)} written by your AI session (estimated; /cost in Claude Code shows the exact session use).</span>` : ''}</div>
  <div class="dv-lb" id="dv-lb" hidden><figure><img id="dv-lb-img" alt=""><div class="acts"><a class="rv-btn dark" id="dv-lb-dl" download>⤓ Download this size</a><button class="rv-btn" type="button" id="dv-lb-x">Close</button></div></figure></div>`; })() : `
  <div class="rv-head2"><div><div class="ud-eyebrow">Review</div><h1>${esc(title)}</h1></div>
- ${videoPath ? `<div class="rv-apwrap"><button class="rv-btn primary" id="rv-approve">${anyFinal ? 'Approve again' : 'Approve and finish'}</button><span class="rv-apnote" id="rv-apnote">${anyFinal ? `Approved ${esc(anyFinal.at.slice(0, 10))} · <a href="?">see Delivery</a>` : esc(scopeLine)}</span></div>` : ''}</div>
+ ${!videoPath ? '' : keepL && !isV && !isCut ? `<div class="rv-apwrap"><a class="rv-btn dark" href="?v=video-vertical.mp4&review=1">Review the vertical version</a><span class="rv-apnote" id="rv-apnote">${okBadge(anyFinal.at.slice(0, 10))} This version was approved ${esc(anyFinal.at.slice(0, 10))}. You can still ask for a change on it. · <a href="?delivery=1">see Delivery</a></span></div>` : onlyV ? `<div class="rv-apwrap"><button class="rv-btn primary" id="rv-approve">Approve the vertical version</button><span class="rv-apnote" id="rv-apnote">Made after the landscape version was approved; that one stays approved as it is · <a href="?delivery=1">see Delivery</a></span></div>` : `<div class="rv-apwrap"><button class="rv-btn primary" id="rv-approve">${anyFinal ? (later ? 'Approve both again' : 'Approve again') : 'Approve and finish'}</button><span class="rv-apnote" id="rv-apnote">${anyFinal ? `${later ? 'The landscape video changed after its approval, so one approval finishes both. ' : ''}Approved ${esc(anyFinal.at.slice(0, 10))} · <a href="?delivery=1">see Delivery</a>` : esc(scopeLine)}</span></div>`}</div>
  ${tabRow || dlMenu ? `<div class="rv-row2">${tabRow || '<span></span>'}${dlMenu}</div>` : ''}`}
  ${delivery ? '' : video ? `<div class="rv-grid">
   <section class="rv-card rv-player" id="rv-player" aria-label="Player">
@@ -277,12 +293,12 @@ a.rv-btn{text-decoration:none;display:inline-block}
    <p class="rv-stale" id="rv-stale">This is a newer render than some comments. Done comments say what was changed; if one needs more, add a follow-up.</p>
    <div class="rv-comp" id="rv-comp"><div class="meta" id="rv-cmeta"></div><textarea id="rv-text" placeholder="What should change here?"></textarea>${hasV ? `<label class="rv-both"><input type="checkbox" id="rv-both" checked><span><b>Also apply to the ${isV ? 'landscape' : 'vertical'} version</b>. Keep it ticked for wording, timing and sound; untick it for a layout fix that belongs to this frame only.</span></label>` : ''}<div class="row"><button class="rv-btn" id="rv-cancel">Cancel</button><button class="rv-btn dark" id="rv-save">Save comment</button></div></div>
    <ul class="rv-list" id="rv-list"></ul>
-   <div class="rv-sendrow"><button class="rv-btn rv-send" id="rv-send">Send to Claude to fix</button><div class="rv-sendstat" id="rv-sendstat" aria-live="polite"></div></div>
+   <div class="rv-sendrow"><button class="rv-btn rv-send" id="rv-send">Send to AI session to fix</button><div class="rv-sendstat" id="rv-sendstat" aria-live="polite"></div></div>
    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px"><button class="rv-btn mark" id="rv-copyopen" title="Copy the open comments as text">Copy open</button><button class="rv-btn mark" id="rv-copy" title="Copy every comment as text">Copy all</button></div>
   </aside>
  </div>
- ${thumbs.length ? `<section class="rv-card rv-thcard" aria-label="Thumbnail"><img src="/thumbs/${esc(thumbs.find((x) => /1280x720/.test(x)) || thumbs[0])}" alt="The thumbnail" id="rv-thimg"><div class="rv-thside"><h2>Thumbnail</h2><p class="rv-sub">The picture before the video plays. Ask for a change and it goes to Claude with your other comments.</p><ul class="rv-list" id="rv-thlist"></ul><div class="rv-thadd"><textarea id="rv-thtext" placeholder="e.g. Use the dashboard screen instead of the homepage; a bigger title"></textarea><button class="rv-btn dark" type="button" id="rv-thsave">Add</button></div></div></section>` : ''}
- <details class="rv-details"><summary>Details</summary><div>${tokens && (tokens.read || tokens.written) ? `<span>Made with about ${fmtK(tokens.read)} tokens read and ${fmtK(tokens.written)} written by Claude on your plan (estimated from ${tokens.tasks} tasks and the scene code; /cost in Claude Code shows the exact session use).</span>` : ''}${videoPath ? `<code>${esc(videoPath)}</code>` : ''}<span>Keyboard: <kbd>Space</kbd> play/pause · <kbd>N</kbd> new comment · <kbd>F</kbd> full screen · <kbd>M</kbd> markers · <kbd>[</kbd> <kbd>]</kbd> speed · <kbd>,</kbd> <kbd>.</kbd> one frame · <kbd>Esc</kbd> cancel</span></div></details>` : '<div class="rv-card rv-none">No finished video yet: render one with <code>node plan/production/scene.mjs whole &lt;project&gt;</code>.</div>'}
+ ${thumbs.length ? `<section class="rv-card rv-thcard" aria-label="Thumbnail"><img src="/thumbs/${esc(thumbs.find((x) => /1280x720/.test(x)) || thumbs[0])}" alt="The thumbnail" id="rv-thimg"><div class="rv-thside"><h2>Thumbnail</h2><p class="rv-sub">The picture before the video plays. Add a change, then send it: Ultrademo redraws the thumbnail on its own, without touching the video.</p><ul class="rv-list" id="rv-thlist"></ul><div class="rv-thadd"><textarea id="rv-thtext" placeholder="e.g. Use the dashboard screen instead of the homepage; a bigger title"></textarea><button class="rv-btn dark" type="button" id="rv-thsave">Add</button></div><div class="rv-sendrow"><button class="rv-btn rv-send" type="button" id="rv-thsend" disabled>Nothing open to send</button><div class="rv-sendstat" id="rv-thstat" aria-live="polite"></div></div></div></section>` : ''}
+ <details class="rv-details"><summary>Details</summary><div>${tokens && (tokens.read || tokens.written) ? `<span>Made with about ${fmtK(tokens.read)} tokens read and ${fmtK(tokens.written)} written by your AI session (estimated from ${tokens.tasks} tasks and the scene code; /cost in Claude Code shows the exact session use).</span>` : ''}${videoPath ? `<code>${esc(videoPath)}</code>` : ''}<span>Keyboard: <kbd>Space</kbd> play/pause · <kbd>N</kbd> new comment · <kbd>F</kbd> full screen · <kbd>M</kbd> markers · <kbd>[</kbd> <kbd>]</kbd> speed · <kbd>,</kbd> <kbd>.</kbd> one frame · <kbd>Esc</kbd> cancel</span></div></details>` : '<div class="rv-card rv-none">No finished video yet: render one with <code>node plan/production/scene.mjs whole &lt;project&gt;</code>.</div>'}
 </main>
 <script type="application/json" id="rv-data">${json(data)}</script>
 <script>
@@ -308,9 +324,12 @@ a.rv-btn{text-decoration:none;display:inline-block}
       if (open && !confirm('Still open: ' + where + '. Approve and finish anyway?')) return;
       var was = ap.textContent; ap.disabled = true; ap.textContent = 'Finishing…';
       var main = names.filter(function(n){ return !/^cut-/.test(n); })[0] || names[0];
-      return fetch('/api/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ video: main, all: true }) }).then(function(r){ return r.json(); }).then(function(a){ if (a.ok) location.href = location.pathname; else { ap.disabled = false; ap.textContent = was; alert(a.error || 'Could not finish.'); } });
+      return fetch('/api/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(D0.onlyV ? { video: 'video-vertical.mp4', only: 'vertical' } : { video: main, all: true }) }).then(function(r){ return r.json(); }).then(function(a){ if (a.ok) location.href = location.pathname; else { ap.disabled = false; ap.textContent = was; alert(a.error || 'Could not finish.'); } });
     });
   });
+  // Delivery: the transcript's words, without the times, to paste into a description
+  var trc = document.getElementById('dv-trcopy');
+  if (trc) trc.addEventListener('click', function(){ var t = document.getElementById('dv-trtext').textContent.split('\\n').filter(function(l){ return /^\\[\\d+:\\d\\d\\] /.test(l); }).map(function(l){ return l.replace(/^\\[\\d+:\\d\\d\\] /, ''); }).join(' '); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function(){ trc.textContent = 'Copied'; }, function(){ trc.textContent = 'Select and copy'; }); setTimeout(function(){ trc.textContent = 'Copy the words'; }, 2000); });
   // Delivery: thumbnails open full size, with their own download
   var lbx = document.getElementById('dv-lb');
   if (lbx) {
@@ -341,7 +360,7 @@ a.rv-btn{text-decoration:none;display:inline-block}
         lb.hidden = false;
         p.items.forEach(function(it){ if (!drawn[it.id]) { drawn[it.id] = 1; list.appendChild(row(it)); } });
         if (p.status === 'kept') { fold(p.kept || 0, p.brand); return; }
-        st.textContent = p.lessons_pending ? 'Claude is adding lessons from your comments…' : '';
+        st.textContent = p.lessons_pending ? 'Ultrademo is adding lessons from your comments…' : '';
         if (p.lessons_pending && tries++ < 60) setTimeout(load, 5000);
       }).catch(function(){});
     }
@@ -427,7 +446,7 @@ setInterval(function(){
     var before = {}; notes.forEach(function(n){ before[n.id] = n.status; });
     var doneNow = (j.comments || []).filter(function(n){ return n.status === 'done' && before[n.id] && before[n.id] !== 'done'; }).length;
     notes = j.comments || []; lastSeen = fresh; render(); drawOverlay();
-    if (doneNow) { $('rv-saved').textContent = 'Claude marked ' + doneNow + ' comment' + (doneNow === 1 ? '' : 's') + ' done'; }
+    if (doneNow) { $('rv-saved').textContent = 'Ultrademo marked ' + doneNow + ' comment' + (doneNow === 1 ? '' : 's') + ' done'; }
   }).catch(function(){});
 }, 4000);
 // ---- the frame overlay: notes near the playhead, the selected note, the draft
@@ -611,18 +630,44 @@ function copyComments(btn, onlyOpen, label){
 }
 $('rv-copy').addEventListener('click', function(){ copyComments($('rv-copy'), false, 'Copy all'); });
 $('rv-copyopen').addEventListener('click', function(){ copyComments($('rv-copyopen'), true, 'Copy open'); });
-// ---- D-92: comments on the thumbnail (saved beside the video's; sent with them)
+// ---- D-92: comments on the thumbnail (saved beside the video's); sent on their own with the card's button (2026-11-11)
 (function(){
   var list = document.getElementById('rv-thlist'); if (!list) return;
-  var notes = [];
+  var notes = [], sent = null, polling = false, sbtn = document.getElementById('rv-thsend'), stat = document.getElementById('rv-thstat');
+  function hhmm(t){ var d = new Date(t); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function openCount(){ return notes.filter(function(n){ return n.status !== 'done'; }).length; }
+  function updSend(){ if (sent) return; var k = openCount(); sbtn.disabled = !k; sbtn.textContent = k ? 'Send to AI session (' + k + ')' : 'Nothing open to send'; }
+  function reload(){ return fetch('/api/thumbnail-comments', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ notes = j.comments || []; draw(); }); }
+  function showSent(s){
+    sent = s; sbtn.disabled = true; sbtn.textContent = 'Sent to AI session';
+    stat.innerHTML = '<span class="rv-spin" aria-hidden="true"></span><span>Sent ' + s.open + ' change' + (s.open === 1 ? '' : 's') + ' at ' + hhmm(s.at) + '. Ultrademo redraws the thumbnail; it appears here when it is ready. If Ultrademo is still fixing the video, it does this next.</span>';
+    if (!polling) { polling = true; poll(); }
+  }
+  function poll(){
+    fetch('/api/status?v=' + encodeURIComponent(D.video || ''), { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){
+      if (!sent) return;
+      if (j.thumb_mtime > sent.at) {
+        var img = document.getElementById('rv-thimg'); if (img) img.src = img.src.split('?')[0] + '?t=' + Date.now();
+        stat.innerHTML = '<b>Redrawn at ' + hhmm(j.thumb_mtime) + '.</b>'; sent = null; polling = false; reload(); return;
+      }
+      setTimeout(poll, 5000);
+    }).catch(function(){ setTimeout(poll, 8000); });
+  }
+  sbtn.addEventListener('click', function(){
+    sbtn.disabled = true; sbtn.textContent = 'Sending…';
+    save().then(function(){ return fetch('/api/submit-thumbnail', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(function(r){ return r.json(); }); })
+      .then(function(j){ if (j && j.ok) showSent(j); else { updSend(); stat.textContent = (j && j.error) || 'Could not send.'; } }, function(){ updSend(); stat.textContent = 'Could not send: is the review page still running?'; });
+  });
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function draw(){
-    list.innerHTML = notes.map(function(n){ var a = (n.thread || []).filter(function(m){ return m.by === 'agent'; }).pop(); return '<li class="rv-note' + (n.status === 'done' ? ' done' : '') + '"><div>' + (n.status === 'done' ? '✓ ' : '') + esc(n.text) + '</div>' + (a ? '<div class="rv-sub">Claude: ' + esc(a.text) + '</div>' : '') + '</li>'; }).join('');
-    window.__thOpen = notes.filter(function(n){ return n.status !== 'done'; }).length;
-    if (window.__updSend) window.__updSend();
+    list.innerHTML = notes.map(function(n){ var a = (n.thread || []).filter(function(m){ return m.by === 'agent'; }).pop(); return '<li class="rv-note' + (n.status === 'done' ? ' done' : '') + '"><div>' + (n.status === 'done' ? '✓ ' : '') + esc(n.text) + '</div>' + (a ? '<div class="rv-sub">Ultrademo: ' + esc(a.text) + '</div>' : '') + '</li>'; }).join('');
+    updSend();
   }
   function save(){ return fetch('/api/thumbnail-comments', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ comments: notes }) }).then(function(r){ return r.json(); }); }
-  fetch('/api/thumbnail-comments', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ notes = j.comments || []; draw(); });
+  reload().then(function(){
+    // a thumbnail send not yet answered by a redraw: show it again after a reload
+    return fetch('/api/status?v=' + encodeURIComponent(D.video || ''), { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ var s = j.thumb_submitted; if (s && j.thumb_mtime < s.at && openCount()) showSent(s); });
+  }).catch(function(){});
   document.getElementById('rv-thsave').addEventListener('click', function(){
     var ta = document.getElementById('rv-thtext'), text = ta.value.trim(); if (!text) return;
     notes.push({ id: 'th-' + Date.now().toString(36), t: 0, text: text, status: 'open', created: new Date().toISOString() });
@@ -633,11 +678,11 @@ $('rv-copyopen').addEventListener('click', function(){ copyComments($('rv-copyop
 // ---- send the open comments to Claude; follow the fix until a new version of the video is out
 (function(){
   var btn = $('rv-send'), stat = $('rv-sendstat'), sent = null, polling = false;
-  window.__updSend = function(open){ if (typeof open === 'number') window.__vOpen = open; if (sent) return; var all = (window.__vOpen || 0) + (window.__thOpen || 0); btn.disabled = !all; btn.textContent = all ? 'Send to Claude to fix (' + all + ')' : 'Nothing open to send'; };
+  window.__updSend = function(open){ if (typeof open === 'number') window.__vOpen = open; if (sent) return; var all = window.__vOpen || 0; btn.disabled = !all; btn.textContent = all ? 'Send to AI session to fix (' + all + ')' : 'Nothing open to send'; };
   function hhmm(t){ var d = new Date(t); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
   function show(s){
-    sent = s; btn.disabled = true; btn.textContent = 'Sent to Claude';
-    stat.innerHTML = '<span class="rv-spin" aria-hidden="true"></span><span>Sent ' + s.open + ' comment' + (s.open === 1 ? '' : 's') + ' at ' + hhmm(s.at) + '. Claude is fixing ' + (s.open === 1 ? 'it' : 'them') + '; the new version appears here when it is rendered.</span>';
+    sent = s; btn.disabled = true; btn.textContent = 'Sent to AI session';
+    stat.innerHTML = '<span class="rv-spin" aria-hidden="true"></span><span>Sent ' + s.open + ' comment' + (s.open === 1 ? '' : 's') + ' at ' + hhmm(s.at) + '. Ultrademo is fixing ' + (s.open === 1 ? 'it' : 'them') + '; the new version appears here when it is rendered.</span>';
     if (!polling) { polling = true; poll(); }
   }
   function poll(){
@@ -646,7 +691,7 @@ $('rv-copyopen').addEventListener('click', function(){ copyComments($('rv-copyop
       if (j.video_mtime < sent.at && sent.thumbnail && j.thumb_mtime > sent.at && !(sent.open - sent.thumbnail)) { stat.innerHTML = '<b>The thumbnail is redrawn.</b> <button class="rv-btn primary" type="button" id="rv-reload">Load it</button>'; $('rv-reload').addEventListener('click', function(){ location.reload(); }); return; }
       if (j.video_mtime > sent.at) { stat.innerHTML = '<b>A new version is ready.</b> <button class="rv-btn primary" type="button" id="rv-reload">Load it</button>'; $('rv-reload').addEventListener('click', function(){ location.reload(); }); return; }
       if (!j.working && Date.now() - sent.at > 5 * 60 * 1000 && !stat.querySelector('.nudge')) {
-        var n = el('div', 'nudge'); n.innerHTML = 'Claude has not started yet. Paste this into the Claude chat: <code>the comments are ready to fix</code> <button class="rv-btn" type="button">Copy</button>';
+        var n = el('div', 'nudge'); n.innerHTML = 'Ultrademo has not started yet. Paste this into your AI session: <code>the comments are ready to fix</code> <button class="rv-btn" type="button">Copy</button>';
         n.querySelector('button').addEventListener('click', function(ev){ (navigator.clipboard ? navigator.clipboard.writeText('the comments are ready to fix') : Promise.reject()).then(function(){ ev.target.textContent = 'Copied'; }); });
         stat.appendChild(n);
       }
@@ -664,6 +709,14 @@ $('rv-copyopen').addEventListener('click', function(){ copyComments($('rv-copyop
   fetch('/api/status?v=' + encodeURIComponent(D.video), { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ if (j.submitted && j.submitted.video === D.video && j.video_mtime < j.submitted.at) show(j.submitted); });
 })();
 })();
+
+(function(){ var go = document.getElementById('dv-later-go'); if (!go) return; var why = document.getElementById('dv-later-why');
+  function follow(){ fetch('/api/format-request', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ if (j.ok && !j.missing) { location.reload(); return; } setTimeout(follow, 5000); }).catch(function(){ setTimeout(follow, 8000); }); }
+  if (go.disabled) follow();
+  go.addEventListener('click', function(){ go.disabled = true; go.textContent = 'Making…'; why.textContent = 'Being made (20–40 min)';
+    fetch('/api/format-request', { method: 'POST' }).then(function(r){ return r.json(); }).then(function(j){ if (!j.ok) { go.disabled = false; go.textContent = 'Make it now'; why.textContent = j.error || 'Could not send it.'; return; } follow(); }).catch(function(){ go.disabled = false; go.textContent = 'Make it now'; why.textContent = 'Could not reach the page server.'; });
+  });
+})();
 </script>
-</body></html>`;
+${notesUi(delivery ? 'delivery' : 'review', { banner: !later })}</body></html>`;
 }

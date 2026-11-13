@@ -49,7 +49,7 @@ export function thumbContent({ projectDir, video = {}, direction = {}, beats = [
   const reveal = beats.find((b) => b.beat === 'reveal') || beats[1] || beats[0];
   const answer = beats.length > 2 ? beats[beats.length - 2] : reveal;
   const sentences = str(video.claim).split(/(?<=[.!?])\s+/);
-  const logoPath = (video.sources || []).find((s) => s.kind === 'logo')?.path || it.brand?.logo || null;
+  const logoPath = direction.logo_file || (video.sources || []).find((s) => s.kind === 'logo')?.path || it.brand?.logo || null;
   let logo = null;
   if (logoPath && fs.existsSync(path.join(projectDir, logoPath))) { try { logo = logoDataUrl(path.join(projectDir, logoPath)); } catch {} }
   // a captured screen: the one the card names (thumbnail.screen, a source id), else the first screenshot or mockup shot

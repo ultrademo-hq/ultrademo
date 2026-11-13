@@ -9,6 +9,9 @@
 // previews, the signature render per direction, swatches, rendered type, a
 // music player, a voice sample. One saturated-yellow action per screen (D-09).
 
+import { PICVIEW } from '../ui/picview.mjs';
+import { readPictures } from '../pictures.mjs';
+import { IMAGE_AI_SERVICES } from '../imageai.mjs';
 import path from 'node:path';
 import { DIALS, HOOK_ANGLES, HOOK_ROUTES, TRANSITIONS } from '../schema.mjs';
 import { SIGNATURE_KINDS, readingTime, allocate, lengthRange, LETTERS, signatureMoment, momentRules } from './schema.mjs';
@@ -16,6 +19,11 @@ import { sketchColours, cellsHtml, sketchCss, frameHtml, setSketchFormat } from 
 import { castFromDirection } from './schema.mjs';
 import { loadCatalogue } from '../../tts/catalogue.mjs';
 import { UD_HEAD, progressBar, musicTracks } from '../intake/page.mjs';
+import { FAVICON } from '../ui/favicon.mjs';
+import { notesUi } from '../notes-ui.mjs';
+import { listedEffects, looseSounds, soundLibrary, effectsSetting, cleanFx } from '../fx.mjs';
+import { SAMPLE as FX_SAMPLE, CALL as FX_CALL } from '../production/effects/samples.mjs';
+import { FX_JS } from './fx-client.mjs';
 
 const e = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const nice = (s) => String(s ?? '').replace(/[-_]+/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
@@ -29,7 +37,7 @@ export const WORDS = {
   close: { product: 'ends on the product', logo: 'ends on the logo', both: 'ends on the product, then the logo' },
   narration: { voice: 'narrated', 'music-only': 'music only, no narration', hybrid: 'narrated with music' },
   register: { factual: 'factual', balanced: 'balanced', bold: 'bold' },
-  dial: { energy: 'Energy', density: 'Density', ground: 'Ground', depth: 'Depth', camera: 'Camera', type: 'Type', texture: 'Texture', colour: 'Colour', product_presence: 'Product presence', sound: 'Sound', voice: 'Voice' },
+  dial: { energy: 'Energy', density: 'Content density', ground: 'Background', depth: 'Depth', camera: 'Camera', type: 'Text movement', texture: 'Texture', colour: 'Colour effect', product_presence: 'Product presence', sound: 'Sound', voice: 'Voice' },
   field: { viewer: 'Who it is for', claim: 'The key claim', pain_point: 'The pain it solves', proof_moment: 'The aha moment', cta: 'Call to action', template: 'Template', length_s: 'Length', narration: 'Narration', register: 'Copy tone', product_type: 'Product type', look: 'The vibe' },
   transition: { cut: 'hard cut', crossfade: 'crossfade', 'zoom-through': 'zoom through', match: 'match cut', wipe: 'wipe' },
   set: { energetic: 'Energetic set', calm: 'Calm set' },
@@ -112,14 +120,18 @@ details>summary{cursor:pointer;color:var(--muted);font-size:13.5px}details.fold{
 .dir .choose{align-self:flex-start;margin-top:auto}
 .swgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px}.sw{display:flex;align-items:flex-start;gap:6px;padding:4px 2px;background:var(--bg);min-width:0}.sw div{display:flex;flex-direction:column;line-height:1.2;min-width:0;font-size:12px}.sw b{font-weight:600;overflow-wrap:anywhere}.sw small{color:var(--muted);font-size:11px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .typerow{display:grid;grid-template-columns:64px 1fr;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)}.typerow>div{min-width:0}.typerow:last-child{border-bottom:0}.typerow .role{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}.typerow .sample{line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.typerow select{font-size:12.5px;margin-top:3px}
-.dials{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px}.dial{border:1px solid var(--line);border-radius:8px;padding:5px 7px;background:var(--bg);min-width:0}.dial em{display:block;font-style:normal;font-size:11px;color:var(--muted)}.dial select{font-size:12.5px;padding:3px 5px;margin-top:2px}.dial .said{display:block;font-size:11.5px;margin-top:3px;color:var(--mid);overflow-wrap:anywhere}.dial.said-on{border-color:var(--mid)}
+.dials{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px}.dial{border:1px solid var(--line);border-radius:8px;padding:5px 7px;background:var(--bg);min-width:0}.dial em{display:flex;align-items:center;font-style:normal;font-size:11px;color:var(--muted)}.dial select{font-size:12.5px;padding:3px 5px;margin-top:2px}.dial .said{display:block;font-size:11.5px;margin-top:3px;color:var(--mid);overflow-wrap:anywhere}.dial.said-on{border-color:var(--mid)}
 .yousaid{font-size:13px;margin:0}.yousaid span{display:inline-block;background:var(--pale);border:1px solid var(--line);border-radius:999px;padding:1px 9px;margin:2px 4px 2px 0;font-size:12.5px}
 .mrow{display:grid;grid-template-columns:170px minmax(0,1.3fr) 200px minmax(0,1fr);gap:12px;padding:12px 0;border-top:1px solid var(--line);align-items:start}.mrow:first-of-type{border-top:0;padding-top:0}.mrow>div{min-width:0}@media(max-width:900px){.mrow{grid-template-columns:1fr 1fr}}@media(max-width:560px){.mrow{grid-template-columns:1fr}}
 .mrow .num{font:700 12px ui-monospace,Menlo,monospace;color:var(--muted)}.mrow .mname{font-weight:600;font-size:14.5px}.mrow .copy{padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:8px}.mrow .copy .h{font-size:21px;font-weight:700;line-height:1.15;overflow-wrap:anywhere}.mrow .copy .s{color:var(--muted);margin-top:4px;overflow-wrap:anywhere}.mrow .copy .k{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
 .counter{font-size:12px;color:var(--bad);font-weight:600;margin-top:4px;display:none}.counter.over{display:block}
 .mrow .timing{font-size:13px}.mrow .timing input{width:64px;padding:2px 6px;font-size:12.5px}.mrow .timing em{display:block;font-style:normal;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
 .mrow .carry{font-size:13px}.mrow .carry em{display:block;font-style:normal;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.more{grid-column:1/-1}.more .grid2{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;font-size:13px;margin-top:6px}@media(max-width:560px){.more .grid2{grid-template-columns:1fr}}.more em{display:block;font-style:normal;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.more textarea{min-height:40px;font-size:13px}
+.more{grid-column:1/-1}.more .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;align-items:start;font-size:13px;margin-top:12px}.more .grid2>div{display:flex;flex-direction:column;gap:6px;min-width:0}.more .grid2>div>.pill{align-self:flex-start}@media(max-width:560px){.more .grid2{grid-template-columns:1fr}}.more em{display:flex;align-items:center;font-style:normal;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.hinfo{position:relative;display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;margin-left:6px;border-radius:50%;border:1.5px solid var(--muted);color:var(--muted);font:700 10px/1 Georgia,serif;font-style:italic;letter-spacing:0;text-transform:none;cursor:help;flex:none}
+.hinfo:hover,.hinfo:focus-visible{border-color:var(--fg);color:var(--fg);outline:none}
+.hinfo .tip{display:none;position:absolute;left:-10px;top:22px;z-index:40;width:max-content;max-width:280px;padding:8px 11px;border-radius:9px;background:var(--fg);color:var(--card);font:400 12.5px/1.45 var(--ud-body,system-ui);font-style:normal;text-align:left;text-transform:none;letter-spacing:0;white-space:normal;box-shadow:0 12px 30px rgba(0,0,0,.18)}
+.hinfo:hover .tip,.hinfo:focus .tip{display:block}h2 .hinfo{vertical-align:middle;margin-left:8px;width:17px;height:17px;font-size:11px}.more textarea{min-height:40px;font-size:13px}
 audio{width:100%;display:block;margin-top:2px}
 .sk .grid{margin:10px 0 0}
 ol.next{padding-left:20px;margin:0}ol.next li{margin:4px 0}
@@ -153,9 +165,22 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--bg);border:1px so
 .thopt b{font-size:12.5px;line-height:1.25}.thopt small{font-size:11.5px;color:var(--muted);line-height:1.3}
 .thtext{display:grid;grid-template-columns:1fr 1fr;gap:8px}.thtext label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted)}.thtext input{font-size:14px}
 .thask{display:grid;gap:4px;font-size:12px;color:var(--muted)}.thask label{font-size:12px}.thaskrow{display:flex;gap:8px;align-items:flex-end}.thaskrow textarea{flex:1;font:inherit;font-size:14px;color:var(--ink,inherit);padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;min-height:44px}.thtext select{font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit}
-.thintro{display:flex;gap:8px;align-items:center;font-size:13.5px}.thtag{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-right:6px}
+.thintro{display:flex;gap:8px;align-items:center;font-size:13.5px}
+.thgenhead{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.thgenbox{margin-top:10px;padding:12px 14px;border:1px dashed var(--line);border-radius:10px}.thgenbox p{margin:0 0 10px}
+.thgenrow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}.thgenrow label{display:flex;flex-direction:column;gap:4px}
+.gstate{margin-top:8px;display:flex;gap:6px;align-items:center}.gstate:empty{display:none}.gstate.good{color:#2f7a3d;font-weight:600}.gstate.bad{color:#b23a2e;font-weight:600}
+.gmark{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;color:#fff;font-size:12px;font-weight:700}.gstate.good .gmark{background:#2f7a3d}.gstate.bad .gmark{background:#b23a2e}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .gstate.good{color:#6cc27c}:root:not([data-theme="light"]) .gstate.bad{color:#ff8a7a}}
+:root[data-theme="dark"] .gstate.good{color:#6cc27c}:root[data-theme="dark"] .gstate.bad{color:#ff8a7a}
+.thworking{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:13.5px}.thworking[hidden]{display:none}.thspin{width:18px;height:18px;flex:none;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--fg);animation:thspin .9s linear infinite}@keyframes thspin{to{transform:rotate(360deg)}}
+.thgrid.busy .thimg img{opacity:.35}.thgrid.busy .thimg .thwait{display:flex;background:color-mix(in srgb,var(--card) 55%,transparent);font-weight:600;color:var(--fg)}.thtag{font:600 11px ui-monospace,Menlo,monospace;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-right:6px}
 .thlb{position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:60;padding:24px}.thlb[hidden]{display:none}.thlbin{position:relative;background:var(--card);border-radius:14px;padding:16px;max-width:1200px;width:100%;max-height:90vh;overflow:auto}.thx{position:absolute;right:8px;top:6px;font-size:22px;border:0;background:none;cursor:pointer;color:var(--fg)}.thlbimgs{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}.thlbimgs figure{margin:0;flex:1 1 220px}.thlbimgs img{width:100%;border-radius:6px;border:1px solid var(--line)}.thlbimgs figcaption{font-size:12px;color:var(--muted)}
 @media(max-width:900px){.thgrid{grid-template-columns:repeat(3,1fr)}.thtext{grid-template-columns:1fr}}
+.lmwarn{margin:12px 0 0;padding:8px 12px;border-radius:8px;font-size:13.5px;background:rgba(214,48,49,.08);border:1px solid rgba(214,48,49,.4)}.lmwarn[hidden]{display:none}.lmask{margin-top:12px}
+.pichead{margin:18px 0 4px;font-size:15px}.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:6px}
+.ptile{position:relative;display:flex;flex-direction:column;gap:5px;padding:6px;border:1.5px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}.ptile.on{border-color:var(--fg);background:var(--pale)}
+.ptile img{width:100%;aspect-ratio:16/10;object-fit:contain;background:var(--bg);border-radius:6px}.ptile span{font-size:12px;color:var(--muted)}
+.ptile .pview{all:unset;display:block;cursor:zoom-in;border-radius:6px}.ptile .pcheck{display:flex;align-items:center;gap:7px;cursor:pointer}.ptile .pcheck input{width:17px;height:17px;margin:0;accent-color:var(--fg)}
 .lmopt b{font-size:13px}.lmopt small{font-size:11.5px;color:var(--muted);line-height:1.3}
 .lmstage{position:relative;aspect-ratio:16/9;border-radius:7px;overflow:hidden;background:var(--lm-ground);display:flex;align-items:center;justify-content:center;border:1px solid var(--line)}
 .lmstage img{width:72%;max-height:46%;object-fit:contain;position:relative;z-index:1}
@@ -173,10 +198,45 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--bg);border:1px so
 .castrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) auto;gap:6px;margin:0 0 6px}.castrow input{min-width:0}.castdel{padding:2px 10px}.grid.overall .span3{grid-column:1/-1;display:flex}.grid.overall .span3>.card{flex:1}
 .assetrow{display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;align-items:start}@media(max-width:800px){.assetrow{grid-template-columns:1fr}}
 .logobox{margin:0;border:1px solid var(--line);border-radius:10px;background:#fff;padding:18px;display:flex;flex-direction:column;gap:8px;align-items:center;justify-content:center;min-height:110px}.logobox img{max-width:100%;max-height:60px}.logobox figcaption{font-size:12px;color:var(--muted)}
-#card-assets .srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}#card-assets .srcgrid img{width:100%;aspect-ratio:16/10;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:8px}#card-assets figure{margin:0}#card-assets figcaption{font-size:12px}.grid.overall .span2{grid-column:span 2;display:flex}.grid.overall .span2>.card{flex:1}
+#card-assets .srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}#card-assets .srcgrid img{width:100%;aspect-ratio:16/10;object-fit:cover;object-position:top;border:1px solid var(--line);border-radius:8px}#card-assets figure{margin:0}#card-assets .sview{all:unset;display:block;cursor:zoom-in;border-radius:8px}#card-assets .sview:focus-visible{outline:3px solid var(--ink);outline-offset:2px}#card-assets figcaption{font-size:12px}.grid.overall .span2{grid-column:span 2;display:flex}.grid.overall .span2>.card{flex:1}
 @media(max-width:1000px){.grid.overall{grid-template-columns:1fr}.grid.overall .span2{grid-column:auto}}
 .span2 .dials{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
-.otherways{margin:14px 0}.otherbox{margin-top:10px;max-width:760px}.otherbox h3{margin:0 0 4px;font-size:16px}.otherbox textarea{width:100%;box-sizing:border-box;margin:10px 0;font:inherit;font-size:15px;line-height:1.45;padding:10px 12px;border:1.5px solid var(--ink);border-radius:10px;background:var(--surface);color:var(--text);resize:vertical}.otherbox .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.otherbox button.dark{background:var(--ink);color:#fff;border:1px solid var(--ink);border-radius:999px;padding:9px 16px;font:600 14px var(--ud-body);cursor:pointer}#card-sound h3{margin:0 0 6px}#card-sound .soundvoice{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.otherways{margin:14px 0}#otherways{display:block;width:100%;box-sizing:border-box;padding:16px;border:1.5px dashed var(--muted);border-radius:16px;background:var(--card);color:var(--fg);font:inherit;font-size:15.5px;font-weight:700;text-align:center;cursor:pointer}#otherways:hover,#otherways[aria-expanded="true"]{border-style:solid;border-color:var(--fg)}.otherbox{margin-top:10px}.otherbox[hidden]{display:none}.otherbox h3{margin:0 0 4px;font-size:16px}.otherbox textarea{width:100%;box-sizing:border-box;margin:10px 0;font:inherit;font-size:15px;line-height:1.45;padding:10px 12px;border:1.5px solid var(--ink);border-radius:10px;background:var(--surface);color:var(--text);resize:vertical}.otherbox .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.otherbox button.dark{background:var(--ink);color:#fff;border:1px solid var(--ink);border-radius:999px;padding:9px 16px;font:600 14px var(--ud-body);cursor:pointer}#card-sound h3{margin:0 0 6px}
+.fxrow{display:flex;flex-direction:column;gap:8px}
+.fxitem{display:grid;grid-template-columns:92px minmax(120px,190px) 1fr auto;gap:10px;align-items:center;padding:6px 8px 6px 6px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.fxthumb{all:unset;cursor:pointer;width:92px;height:56px;border-radius:8px;overflow:hidden;background:#f5f9ff;position:relative;display:block}
+.fxthumb:focus-visible{outline:3px solid var(--ink);outline-offset:2px}
+.fxthumb .fxstage{transform:scale(.23);transform-origin:0 0}
+.fxthumb.snd{display:grid;place-items:center;background:var(--bg);font-size:22px}
+.fxname{display:flex;flex-direction:column;gap:2px;min-width:0}.fxname b{font-size:14px}
+.fxname button{all:unset;cursor:pointer;font-size:12.5px;color:var(--muted);display:inline-flex;gap:5px;align-items:center}.fxname button:hover{color:var(--fg)}
+.fxwhen{width:100%;box-sizing:border-box;font:inherit;font-size:14px;padding:8px 10px;border:1.5px solid var(--ink);border-radius:9px;background:var(--surface);color:var(--text)}
+.fxdel{all:unset;cursor:pointer;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;color:var(--muted);font-size:18px}.fxdel:hover{background:var(--bg);color:var(--fg)}
+.fxadd{all:unset;box-sizing:border-box;cursor:pointer;width:100%;padding:10px 12px;border:1.5px dashed var(--muted);border-radius:12px;background:var(--card);font-weight:600;font-size:14px;text-align:center}.fxadd:hover{border-style:solid;border-color:var(--fg)}
+.fxnote{font-size:13px;color:var(--muted)}
+@media (max-width:760px){.fxitem{grid-template-columns:92px 1fr auto;grid-template-areas:'th nm del' 'w w w'}.fxitem .fxthumb{grid-area:th}.fxitem .fxname{grid-area:nm}.fxitem .fxdel{grid-area:del}.fxitem .fxwhen{grid-area:w}}
+.fxstage{position:relative;width:400px;height:240px;overflow:hidden;display:flex;align-items:center;justify-content:center;background:#f5f9ff;font-family:var(--ud-body,system-ui);color:#0c111d}
+.fxstage .chip{padding:8px 16px;border-radius:999px;background:#eef8ff;color:#1674f8;font-weight:600;font-size:18px;border:2px solid #b2ddff}.fxstage .chip.ok{background:#e8f8f0;color:#0f8a52;border-color:#a6e9c9}
+.fxstage .row{padding:12px 18px;border-radius:12px;background:#fff;border:2px solid #eaecf0;font-size:17px;color:#0c111d}
+.fxstage .btn{padding:12px 22px;border-radius:12px;background:#1674f8;color:#fff;font-weight:600;font-size:17px}
+.fxstage .title{font-weight:800;font-size:42px;letter-spacing:-.025em;color:#0c111d}.fxstage .num{font-weight:800;font-size:58px;letter-spacing:-.025em;color:#17b26a}.fxstage .num.bad{color:#f04438}
+.fxstage .fld{min-width:270px;min-height:24px}.fxstage .pair{display:flex;gap:120px}.fxstage .pair span{padding:10px 16px;border-radius:10px;background:#fff;border:2px solid #eaecf0;font-weight:600}
+.fxgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px}
+.fxopt{border:1.5px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden;display:flex;flex-direction:column}
+.fxopt.focus{border-color:var(--ink);box-shadow:0 0 0 3px var(--bg)}
+.fxopt .fxwin{height:150px;overflow:hidden;background:#f5f9ff;position:relative}.fxopt .fxwin .fxstage{position:absolute;left:50%;top:0;margin-left:-200px;transform:scale(.625);transform-origin:50% 0}
+.fxopt .fxmeta{padding:9px 11px 11px;display:flex;flex-direction:column;gap:6px;flex:1}.fxopt .fxmeta b{font-size:14.5px}.fxopt .fxmeta small{color:var(--muted);font-size:12.5px;line-height:1.35}
+.fxopt .fxacts{display:flex;gap:8px;align-items:center;margin-top:auto}
+.fxacts button,.fxsnd button{font:600 13px var(--ud-body);border-radius:999px;padding:6px 12px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--text)}
+.fxacts button.dark,.fxsnd button.dark{background:var(--ink);color:#fff;border-color:var(--ink)}
+.fxsnds{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.fxsnd{display:grid;grid-template-columns:auto 130px 1fr auto;gap:12px;align-items:center;padding:9px 12px;border-top:1px solid var(--line);font-size:13.5px}.fxsnd:first-child{border-top:0}.fxsnd span{color:var(--muted)}
+@media (max-width:600px){.fxsnd{grid-template-columns:auto 1fr auto}.fxsnd span{grid-column:1/-1}}
+#card-sound .soundfx{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.fxlevels{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}.fxlevels label{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:1.5px solid var(--line);border-radius:999px;cursor:pointer;font-weight:600;font-size:14px;background:var(--surface)}
+.fxlevels label.on{border-color:var(--ink);background:var(--bg)}.fxlevels input{margin:0;accent-color:var(--ink)}
+.fxiface{display:flex;gap:9px;align-items:flex-start;font-size:14px;cursor:pointer}.fxiface input{margin:3px 0 0;width:17px;height:17px;accent-color:var(--ink)}
+#card-sound .soundvoice{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
 /* colour swatches: the colour itself, no box around it */
 .sw{background:none!important}.sw input[type=color]{width:34px;height:26px;border:0;padding:0;border-radius:6px;cursor:pointer}
 .sw input[type=color]::-webkit-color-swatch-wrapper{padding:0}.sw input[type=color]::-webkit-color-swatch{border:1px solid var(--line);border-radius:6px}
@@ -217,6 +277,20 @@ const styleName = (P) => (P.style?.resolved === 'brand' ? 'derived from your bra
  * @param {{ n?: number, exclude?: string[] }} [opts]
  * @returns {{ same: string[], like: string[] }}
  */
+const DIAL_INFO = {
+  energy: 'How fast and lively the whole video feels.',
+  density: 'How much is on screen at once.',
+  ground: 'What sits behind the content: flat colour, soft pools of colour, a texture or a photo.',
+  depth: 'Flat, in layers, or with 3D depth.',
+  camera: 'How the view moves across the video: still, one move per shot, flowing or chasing.',
+  type: 'How the words move on screen: quiet, led by big headlines, or moving with the beat.',
+  texture: 'A finish over the picture: none, glow, grain, glass or a colour fringe.',
+  colour: 'How much colour the video uses: your brand only, one accent, two colours or all of them.',
+  product_presence: 'How much of the video shows your product, against ideas and words.',
+  sound: 'What leads the sound: the music, the sound effects, or quiet.',
+  voice: 'A narrator, a presenter, or no voice.',
+};
+
 export function motionShelf(id, entries, { n = 8, exclude = [] } = {}) {
   const e = entries.find((x) => x.id === id);
   if (!e) return { same: [], like: [] };
@@ -308,12 +382,14 @@ var canvas='',mood='';function filter(){var n=0;R.querySelectorAll('.stylecard')
 R.querySelectorAll('#canvaschips .chip').forEach(function(ch){ch.addEventListener('click',function(){R.querySelectorAll('#canvaschips .chip').forEach(function(x){x.classList.remove('on')});ch.classList.add('on');canvas=ch.dataset.canvas;filter();})});
 R.querySelector('#moodsel').addEventListener('change',function(ev){mood=ev.target.value;filter();});filter();
 function working(on,text){if(!statusEl)return;if(!on){statusEl.classList.remove('working');return;}statusEl.classList.remove('bad');statusEl.classList.add('working');statusEl.innerHTML='<span class="spin" aria-hidden="true"></span><span></span>';statusEl.lastChild.textContent=text;}
-function nudge(){if(!statusEl||statusEl.querySelector('.nudge'))return;var n=document.createElement('span');n.className='nudge';n.innerHTML='Your AI agent has not picked it up yet. Paste this into its chat: <code>a direction task is waiting</code> <button type="button">Copy</button>';n.querySelector('button').addEventListener('click',function(ev){var b=ev.currentTarget;(navigator.clipboard?navigator.clipboard.writeText('a direction task is waiting'):Promise.reject()).then(function(){b.textContent='Copied'},function(){b.textContent='Select and copy'});setTimeout(function(){b.textContent='Copy'},2000);});statusEl.appendChild(n);}
+function nudge(){if(!statusEl||statusEl.querySelector('.nudge'))return;var n=document.createElement('span');n.className='nudge';n.innerHTML='Still waiting? If your AI session looks idle, paste this into it: <code>a direction task is waiting</code> <button type="button">Copy</button>';n.querySelector('button').addEventListener('click',function(ev){var b=ev.currentTarget;(navigator.clipboard?navigator.clipboard.writeText('a direction task is waiting'):Promise.reject()).then(function(){b.textContent='Copied'},function(){b.textContent='Select and copy'});setTimeout(function(){b.textContent='Copy'},2000);});statusEl.appendChild(n);}
 function propose(choice){if(SAMPLE){setStatus('Static preview: the recorded run proposed its directions with the style left to the skill; open the Direction tab.');if(window.__showTab)window.__showTab('direction');return;}go.disabled=true;var t0=Date.now();
-working(true,'Your AI agent is writing your directions'+(choice==='auto'?'':' in this style')+'. This takes a few minutes; the page carries on by itself when they are ready.');
-(function attempt(){post('/api/style',{choice:choice}).then(function(j){if(j.ok){location.href=j.next;return;}
-if(j.waiting||j.busy){if(Date.now()-t0>4*60*1000)nudge();setTimeout(attempt,6000);return;}
-working(false);setStatus(j.error||'Could not propose the directions.',!j.saved);go.disabled=false;}).catch(function(err){working(false);setStatus('Could not propose the directions: '+err.message,true);go.disabled=false;});})();}
+working(true,'Sent to your AI session: Ultrademo is writing two or three directions'+(choice==='auto'?'':' in this style')+', each with a sketch storyboard and rendered frames. This usually takes 2 to 4 minutes; the page carries on by itself when they are ready.');
+var clock=document.createElement('span');clock.className='elapsed';clock.style.cssText='font-variant-numeric:tabular-nums;color:var(--muted,inherit);margin-left:4px';statusEl.appendChild(clock);
+var tick=setInterval(function(){var s=Math.round((Date.now()-t0)/1000);clock.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0');},1000);
+(function attempt(){post('/api/style',{choice:choice}).then(function(j){if(j.ok){clearInterval(tick);location.href=j.next;return;}
+if(j.waiting||j.busy){if(Date.now()-t0>90*1000)nudge();setTimeout(attempt,4000);return;}
+clearInterval(tick);working(false);setStatus(j.error||'Could not propose the directions.',!j.saved);go.disabled=false;}).catch(function(err){clearInterval(tick);working(false);setStatus('Could not propose the directions: '+err.message,true);go.disabled=false;});})();}
 go.addEventListener('click',function(){if(chosen)propose(chosen)});
 })();`;
   return { title: `Video style · ${P.video.product}`, body, script };
@@ -323,47 +399,114 @@ go.addEventListener('click',function(){if(chosen)propose(chosen)});
 // Screen 2: pick a direction
 // ---------------------------------------------------------------------------
 
+const BOARD_CSS = `<style>
+.boards{display:grid;gap:12px}
+.card.dir.board{display:block}
+.board{position:relative;padding:20px 22px 16px;border-radius:20px;border:1.5px solid var(--line);background:radial-gradient(circle at 1px 1px,rgba(0,0,0,.07) 1px,transparent 1.2px) 0 0/18px 18px,var(--bg)}
+.board.sel{border-color:var(--fg);box-shadow:0 5px 0 var(--fg)}
+.bhd{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:start}
+.btab{display:grid;place-items:center;width:44px;height:44px;border-radius:12px;background:var(--fg);color:var(--card);font:800 21px var(--ud-display)}
+.btitle{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}.btitle h2{margin:0;font:800 26px/1.1 var(--ud-display);letter-spacing:-.02em}
+.bflag{padding:2px 10px;border-radius:999px;font-size:12.5px;background:rgba(214,48,49,.08);border:1px solid rgba(214,48,49,.4)}
+.bacts{display:flex;flex-direction:column;gap:8px;align-items:flex-end}.bacts .choose{white-space:nowrap}
+.btoggle{border:0;background:none;padding:2px 0;font:inherit;font-size:13.5px;font-weight:600;color:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer;white-space:nowrap}
+.arc{margin:8px 0 0;display:grid}.arc>div{display:grid;grid-template-columns:118px 1fr;gap:10px;align-items:baseline;padding:7px 0}.arc>div+div{border-top:1px solid var(--line)}.arc>div:first-child{padding-top:2px}
+.arc dt{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.arc dd{margin:0;font-size:15px;line-height:1.45}.arc .sh{display:none}
+.bidea{margin:6px 0 0;max-width:70ch}
+.arcload{display:grid;gap:9px;margin-top:12px}.arcload i{display:block;height:12px;border-radius:6px;background:linear-gradient(90deg,var(--line) 0%,var(--card) 50%,var(--line) 100%);background-size:200% 100%;animation:arcshim 1.4s ease-in-out infinite}.arcload i:nth-child(2){width:88%}.arcload i:nth-child(3){width:70%}
+@keyframes arcshim{0%{background-position:100% 0}100%{background-position:-100% 0}}@media (prefers-reduced-motion:reduce){.arcload i{animation:none}}
+.board .strip{margin-top:16px}.board .dstory h3{margin:0 0 10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.bmore{margin-top:18px}
+.pins{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;align-items:stretch}
+.pin{position:relative;padding:12px 12px 10px;border-radius:10px;background:var(--card);box-shadow:0 2px 0 rgba(0,0,0,.06),0 6px 16px rgba(0,0,0,.06);font-size:13px;display:flex;flex-direction:column;gap:4px}
+.pin::before{content:"";position:absolute;top:-7px;left:50%;width:46px;height:14px;transform:translateX(-50%) rotate(-3deg);background:rgba(223,254,2,.75);border-radius:2px}
+.pin:nth-child(odd){transform:rotate(-.6deg)}.pin:nth-child(even){transform:rotate(.7deg)}.pin.mom{grid-column:span 2}
+.pin>b{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}.pin small{color:var(--muted)}
+.pin q{display:block;font:800 17px/1.25 var(--ud-display);quotes:"“" "”"}
+.sw{display:flex;gap:6px}.sw span{flex:1;height:30px;border-radius:7px;border:1px solid rgba(0,0,0,.12)}.swl{display:flex;gap:6px}.swl i{flex:1;font-style:normal;font-size:10.5px;color:var(--muted);text-align:center}
+.aa{font-size:36px;line-height:1}.feel{display:flex;flex-wrap:wrap;gap:5px}.feel span{padding:3px 9px;border-radius:999px;border:1px solid var(--line);font-weight:600}
+.pace{display:flex;gap:4px;align-items:flex-end;height:30px}.pace i{flex:1;border-radius:3px;background:var(--line)}.pace i.on{background:var(--fg)}.pacel{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted)}
+.pin.mus span{font-weight:700}
+.bwhy{margin:16px 0 0;font-size:14px}
+.skmore{display:none}
+/* collapsed: title, the three beats and the buttons beside four frames (and a stack for the rest), so every direction fits on one screen */
+.board.collapsed{padding:12px 16px}
+.board.collapsed .btop{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:22px;align-items:center}
+.board.collapsed .bhd{grid-template-columns:auto 1fr}.board.collapsed .btitle h2{font-size:20px}
+.board.collapsed .arc{margin-top:4px}.board.collapsed .arc>div{grid-template-columns:62px 1fr;padding:2px 0}.board.collapsed .arc dd{font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.board.collapsed .arc .sh{display:inline}.board.collapsed .arc .lg,.board.collapsed .arc .btw{display:none}
+.board.collapsed .bidea{font-size:13.5px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.board.collapsed .bacts{grid-column:2;flex-direction:row;align-items:center;gap:16px;margin-top:2px}
+.board.collapsed .strip{margin-top:0}.board.collapsed .dstory h3,.board.collapsed .skm figcaption,.board.collapsed .skcap,.board.collapsed .bmore,.board.collapsed .skm.extra{display:none}
+.board.collapsed .skstrip{grid-template-columns:repeat(4,minmax(0,1fr)) auto}
+.board.collapsed .skmore{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;width:92px;margin:8px 8px 0 0;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);cursor:pointer;box-shadow:4px -4px 0 -1px var(--card),4px -4px 0 0 var(--line),8px -8px 0 -1px var(--card),8px -8px 0 0 var(--line)}
+.skmore b{font:800 24px/1 var(--ud-display)}.skmore small{font-size:11px;color:var(--muted)}
+@media (max-width:900px){.board.collapsed .btop{grid-template-columns:1fr}.bhd{grid-template-columns:auto 1fr}.bacts{grid-column:2;flex-direction:row;align-items:center}.pin.mom{grid-column:auto}}
+</style>`;
+
 export function buildDirectionScreen(opts) {
   const { proposals: P, assets, state = {}, sample = false, embed = false } = opts;
   const dirs = P.directions || [];
   const styleById = Object.fromEntries((P.styles || []).map((s) => [s.id, s]));
   const fixed = P.style?.resolved; // an id, 'brand', or null (the skill chose per direction)
+  // the plain-language summary (summary.mjs) by letter; while it is being written each board shows a loader, and
+  // without one the board uses the direction's own words
+  const SUM = opts.summary || null;
+  const waitingSum = Boolean(opts.summaryOn && !SUM && !opts.summaryFailed && dirs.length);
+  const PACE = { calm: 1, steady: 2, high: 3, frantic: 4 };
+  const ROLE_NAMES = { ground: 'Background', ink: 'Text', primary: 'Brand', accent: 'Accent', glow: 'Glow', surface: 'Surface' };
+  const tracks = (() => { try { return musicTracks(); } catch { return []; } })();
   const card = (d, i) => {
     const letter = LETTERS[i];
-    const fr = d.frames?.files || {};
-    const mo = d.frames?.report?.moment || signatureMoment(d);
-    const momentName = mo.name || d.moments[mo.index]?.name || '';
-    const media = fr.signature_mp4 ? `<video src="${e(assets.project + fr.signature_mp4)}" poster="${fr.signature ? e(assets.project + fr.signature) : ''}" muted loop autoplay playsinline preload="metadata"></video>` : fr.signature ? `<img src="${e(assets.project + fr.signature)}" alt="The signature moment of direction ${letter}">` : `<div class="muted small" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center">no render</div>`;
-    const styleLine = !fixed && d.video_style && styleById[d.video_style] ? `<div class="small muted">Video style: ${e(styleById[d.video_style].name)}</div>` : !fixed && !d.video_style ? '<div class="small muted">Video style: derived from your brand</div>' : '';
+    const S = SUM?.[letter] || null;
+    const sel = state?.chosen === i;
     const sc = sketchColours(d);
-    return `<article class="card dir${state?.chosen === i ? ' sel' : ''}" id="dir-${letter}" data-index="${i}"><div class="dinfo">
-<div><span class="letter">Direction ${letter}</span></div>
-<div class="name clamp2">${e(d.name)}</div>
-<div class="look clamp1">${e(d.mood)}</div>
-<p class="clamp3" style="margin:0">${e(d.idea)}</p>
-<div class="small clamp2"><b>Signature move:</b> ${e(d.signature.what)}</div>
-<div class="media">${media}</div>
-<div class="small muted">One scene rendered in this look: <b>${e(momentName)}</b>. The storyboard shows every scene.</div>
-${styleLine}
-
-<button type="button" class="choose" data-choose="${i}">${state?.chosen === i ? 'Chosen · refine it' : 'Choose this direction'}</button>
+    const styleLine = !fixed && d.video_style && styleById[d.video_style] ? `Video style: ${styleById[d.video_style].name}` : '';
+    const arc = S ? `<dl class="arc">${[['Opens', S.opens], ['Then', S.then], ['Ends', S.ends]].map(([k, b]) => `<div><dt>${k}</dt><dd><span class="sh">${e(b.short)}</span><span class="lg">${e(b.full)}</span></dd></div>`).join('')}<div class="btw"><dt>Between scenes</dt><dd>${e(S.between)}</dd></div></dl>`
+      : waitingSum ? `<div class="arcload" aria-label="Ultrademo is describing this direction"><i></i><i></i><i></i></div>`
+      : `<p class="bidea">${e(d.idea)}</p>`;
+    const feels = (S?.feels || String(d.mood || '').split(/,\s*/)).filter(Boolean).slice(0, 4);
+    const builds = S?.builds_to || { words: (d.signature?.words || []).slice(0, 2).join(' ') || d.signature?.what || '', how: S ? '' : '' };
+    const pace = PACE[d.energy] || 2;
+    const cols = ['ground', 'ink', 'primary', 'accent', 'glow'].map((r) => (d.palette || []).find((x) => x.role === r)).filter(Boolean).slice(0, 4);
+    const disp = typeof d.type?.display === 'string' ? d.type.display : d.type?.display?.family || 'Inter';
+    const text = typeof d.type?.text === 'string' ? d.type.text : d.type?.text?.family || '';
+    const track = tracks.find((t) => t.file === d.music?.file);
+    const figs = d.moments.map((m, j) => `<figure class="skm${j >= 4 ? ' extra' : ''}"><div class="frame" style="background:${sc.canvas}">${frameHtml(m, d, sc)}</div><figcaption><b>${j + 1}. ${e(m.name)}</b><span>${e(m.reads || m.goal)}</span></figcaption></figure>`);
+    if (figs.length > 4) figs.splice(4, 0, `<button type="button" class="skmore" aria-label="See all ${figs.length} scenes"><b>+${figs.length - 4}</b><small>more scenes</small></button>`);
+    return `<article class="card dir board collapsed${sel ? ' sel' : ''}" id="dir-${letter}" data-index="${i}"${waitingSum ? ' data-summary="waiting"' : ''}>
+<div class="btop"><div class="bhd"><span class="btab">${letter}</span><div class="bmain"><div class="btitle"><h2>${e(S?.title || d.name)}</h2>${S?.flag ? `<span class="bflag">${e(S.flag)}</span>` : ''}</div>${arc}</div>
+<div class="bacts"><button type="button" class="choose" data-choose="${i}">${sel ? 'Chosen · refine it' : 'Choose this direction'}</button><button type="button" class="btoggle" aria-expanded="false">See the whole board</button></div></div>
+<div class="strip"><div class="dstory sk"><style>${sketchCss(d, sc).replace(/\.sk /g, `#dir-${letter} .sk `)}</style><h3>The storyboard · ${d.moments.length} scenes · ${e(P.video.length_s)} s</h3><div class="skstrip">${figs.join('')}</div>
+<p class="small muted skcap">Sketches with the real words and colours; boxes stand for the product's screens.</p></div></div></div>
+<div class="bmore"><div class="pins">
+${builds.words ? `<div class="pin mom"><b>The moment it builds to</b><q>${e(builds.words)}</q>${builds.how ? `<small>${e(builds.how)}</small>` : ''}</div>` : ''}
+${feels.length ? `<div class="pin"><b>Feels</b><div class="feel">${feels.map((f) => `<span>${e(f)}</span>`).join('')}</div></div>` : ''}
+<div class="pin"><b>Pace</b><div class="pace">${[1, 2, 3, 4].map((n) => `<i class="${n <= pace ? 'on' : ''}" style="height:${30 + n * 15}%"></i>`).join('')}</div><div class="pacel"><span>Calm</span><span>Fast</span></div></div>
+${cols.length ? `<div class="pin"><b>Colours</b><div class="sw">${cols.map((c) => `<span style="background:${e(c.value)}"></span>`).join('')}</div><div class="swl">${cols.map((c) => `<i>${e(ROLE_NAMES[c.role] || c.role)}</i>`).join('')}</div></div>` : ''}
+<div class="pin"><b>Lettering</b><div class="aa" style="font-family:'${e(disp)}',system-ui;font-weight:800">Aa</div><small>${e(disp)}${text && text !== disp ? ` with ${e(text)}` : ''}</small></div>
+${d.music?.file ? `<div class="pin mus"><b>Music</b><span>${e(track?.title || nice(String(d.music.file).replace(/\.[a-z0-9]+$/i, '')))}</span><small>${e(d.music.why || '')}</small></div>` : ''}
 </div>
-<div class="dstory sk"><style>${sketchCss(d, sc).replace(/\.sk /g, `#dir-${letter} .sk `)}</style><h3>The storyboard · ${d.moments.length} scenes, ${e(P.video.length_s)} s</h3><div class="skstrip">${d.moments.map((m, j) => `<figure class="skm"><div class="frame" style="background:${sc.canvas}">${frameHtml(m, d, sc)}</div><figcaption><b>${j + 1}. ${e(m.name)}</b><span>${e(m.reads || m.goal)}</span></figcaption></figure>`).join('')}</div>
-<p class="small muted" style="margin:8px 0 0">Sketches with the real words and colours; boxes stand for the product's screens.</p></div>
-<details class="fold why"><summary>Why this direction</summary><div class="small whygrid"><div class="kv"><span>Does it carry your message?</span><div>${e(d.judged.serves_claim)}</div></div><div class="kv"><span>Does it show your brand at its best?</span><div>${e(d.judged.brand_at_best)}</div></div><div class="kv"><span>Could a competitor use the same video? (should be no)</span><div>${e(d.judged.competitor_could_use)}</div></div><div class="kv"><span>Does it still work when watched muted, small or half-attended?</span><div>${e(d.judged.survives_bad_day)}</div></div><div class="kv"><span>Claude's overall score</span><div>${e(d.judged.score)} out of 10</div></div><div class="kv"><span>Opening hook</span><div>${e(d.hook.line)}</div></div><div class="kv"><span>Closing shot</span><div>${e(d.closing_shot)}</div></div>${(d.repairs || []).length ? `<div class="kv"><span>Adjusted</span><div>${d.repairs.map(e).join('<br>')}</div></div>` : ''}</div></details>
+${S?.why ? `<p class="bwhy"><b>Why this one:</b> ${e(S.why)}</p>` : ''}${styleLine ? `<p class="small muted">${e(styleLine)}</p>` : ''}
+<details class="fold why"><summary>How Ultrademo judged it</summary><div class="small whygrid"><div class="kv"><span>Does it carry your message?</span><div>${e(d.judged.serves_claim)}</div></div><div class="kv"><span>Does it show your brand at its best?</span><div>${e(d.judged.brand_at_best)}</div></div><div class="kv"><span>Could a competitor use the same video? (should be no)</span><div>${e(d.judged.competitor_could_use)}</div></div><div class="kv"><span>Does it still work when watched muted, small or half-attended?</span><div>${e(d.judged.survives_bad_day)}</div></div><div class="kv"><span>Ultrademo's overall score</span><div>${e(d.judged.score)} out of 10</div></div><div class="kv"><span>Signature move</span><div>${e(d.signature.what)}</div></div>${(d.repairs || []).length ? `<div class="kv"><span>Adjusted</span><div>${d.repairs.map(e).join('<br>')}</div></div>` : ''}</div></details>
+</div>
 </article>`;
   };
   const empty = `<div class="notice">No directions yet. <a href="${embed ? '#style' : '/style'}" data-tab="style">Pick a video style</a> first; the directions are proposed to fit it.</div>`;
   const body = `<section class="screen" id="screen-direction">
 ${stepper('direction', state, { embed })}
 <h1>Pick a direction</h1>
-<p class="lead">${dirs.length} direction${dirs.length === 1 ? '' : 's'} for the ${e(nice(P.video.template).toLowerCase())} video of ${e(P.video.product)}, ${fixed === 'brand' ? 'in a look derived from your brand' : fixed ? `inside the video style ${e(styleName(P))}` : 'each in the video style the skill found closest'}. Each is a different idea, not a different colour; the render under each is its own signature moment. <a href="${embed ? '#style' : '/style'}" data-tab="style">Change the video style</a>.</p>
-${dirs.length ? `<div class="grid dirs">${dirs.map(card).join('\n')}</div>` : empty}
+<p class="lead">${dirs.length === 1 ? 'One way' : `${['', 'One', 'Two', 'Three', 'Four'][dirs.length] || dirs.length} ways`} to make your ${e(P.video.length_s)}-second ${e(nice(P.video.template).toLowerCase())} video of ${e(P.video.product)}, ${fixed === 'brand' ? 'in a look from your brand' : fixed ? `in the video style ${e(styleName(P))}` : 'each in the video style closest to it'}. Same story, different feels: pick the one that feels most like your brand; you fine-tune the details next. <a href="${embed ? '#style' : '/style'}" data-tab="style">Change the video style</a>.</p>
+${BOARD_CSS}
+${dirs.length ? `<div class="boards">${dirs.map(card).join('\n')}</div>` : empty}
 ${(P.dropped || []).length ? `<p class="small muted">Also considered and set aside: ${P.dropped.map((d) => `${e(d.name)} (${e(d.why)})`).join('; ')}.</p>` : ''}
-<div class="otherways"><button type="button" class="quiet" id="otherways" aria-expanded="false" aria-controls="otherways-box">Show me other ways</button><div class="card otherbox" id="otherways-box" hidden><h3>What should the new directions do differently?</h3><p class="small muted">Optional. Say what you are looking for: the message to lead with, what to show more or less of, a feeling. Three new directions are written to your note; these three are saved in the project folder (direction/set-aside), not deleted.</p><textarea id="otherways-text" rows="4" maxlength="800" placeholder="e.g. Lead with how easy it is to make a high-quality video with AI; keep the re-run to one scene"></textarea><div class="row"><button type="button" class="dark" id="otherways-go">Propose new directions</button><button type="button" class="quiet" id="otherways-cancel">Cancel</button><span class="small muted" id="otherways-note" aria-live="polite"></span></div></div></div>
-<div class="bar"><span class="status">${sample ? 'Static preview: choosing opens the Refine tab.' : 'Choose a direction to refine it; nothing is written until you confirm.'}</span>${opts.costLine ? `<span class="small muted">${e(opts.costLine)}</span>` : ''}</div>
+<div class="otherways"><button type="button" class="quiet" id="otherways" aria-expanded="false" aria-controls="otherways-box">None of these? Ask for new ones</button><div class="card otherbox" id="otherways-box" hidden><h3>What should the new directions do differently?</h3><p class="small muted">Optional. Say what you are looking for: the message to lead with, what to show more or less of, a feeling. Three new directions are written to your note; these three are saved in the project folder (direction/set-aside), not deleted.</p><textarea id="otherways-text" rows="4" maxlength="800" placeholder="e.g. Lead with how easy it is to make a high-quality video with AI; keep the re-run to one scene"></textarea><div class="row"><button type="button" class="dark" id="otherways-go">Propose new directions</button><button type="button" class="quiet" id="otherways-cancel">Cancel</button><span class="small muted" id="otherways-note" aria-live="polite"></span></div></div></div>
+<div class="bar"><span class="status">${sample ? 'Static preview: choosing opens the Refine tab.' : 'Pick one to fine-tune it next. Nothing is final until you confirm.'}</span>${opts.costLine ? `<span class="small muted">${e(opts.costLine)}</span>` : ''}</div>
 </section>`;
   const script = `(function(){var R=document.getElementById('screen-direction');var SAMPLE=${sample ? 'true' : 'false'};${COMMON_JS}
+R.querySelectorAll('.board .btoggle').forEach(function(b){b.addEventListener('click',function(){var s=b.closest('.board'),open=s.classList.toggle('collapsed')===false;b.textContent=open?'Close the board':'See the whole board';b.setAttribute('aria-expanded',open?'true':'false');});});
+R.querySelectorAll('.skmore').forEach(function(m){m.addEventListener('click',function(){m.closest('.board').querySelector('.btoggle').click();});});
+if(!SAMPLE&&R.querySelector('[data-summary="waiting"]')){(function poll(){fetch('/api/summary',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(j.ready||j.failed||j.off){location.reload();return;}setTimeout(poll,3000);}).catch(function(){setTimeout(poll,5000);});})();}
 R.querySelectorAll('.choose').forEach(function(b){b.addEventListener('click',function(){var i=Number(b.dataset.choose);R.querySelectorAll('.dir').forEach(function(d){d.classList.toggle('sel',Number(d.dataset.index)===i)});if(SAMPLE){if(window.__showTab)window.__showTab('refine');return;}b.disabled=true;setStatus('Opening the refine screen…');post('/api/choose',{chosen:i}).then(function(j){if(j.ok){location.href=j.next;return;}setStatus(j.error||'Could not choose.',true);b.disabled=false;}).catch(function(err){setStatus('Could not choose: '+err.message,true);b.disabled=false;});});});
 var ob=R.querySelector('#otherways'),box=R.querySelector('#otherways-box'),og=R.querySelector('#otherways-go'),on=R.querySelector('#otherways-note');ob.addEventListener('click',function(){box.hidden=!box.hidden;ob.setAttribute('aria-expanded',String(!box.hidden));if(!box.hidden)R.querySelector('#otherways-text').focus();});R.querySelector('#otherways-cancel').addEventListener('click',function(){box.hidden=true;ob.setAttribute('aria-expanded','false');});og.addEventListener('click',function(){if(SAMPLE){on.textContent='Static preview: nothing is proposed.';return;}var note=R.querySelector('#otherways-text').value.trim(),t0=Date.now(),sent=false;og.disabled=true;on.textContent='Your AI agent is writing three new directions. This takes a few minutes; the page carries on by itself when they are ready.';(function attempt(){post('/api/more',{note:note,again:sent}).then(function(j){sent=true;if(j.ok){location.href=j.next;return;}if(j.waiting||j.busy){if(Date.now()-t0>4*60*1000)on.textContent='Still waiting. If nothing happens, paste this into the chat with your AI agent: a direction task is waiting';setTimeout(attempt,6000);return;}on.textContent=j.error||'Could not propose new directions.';og.disabled=false;}).catch(function(err){on.textContent='Could not propose new directions: '+err.message;og.disabled=false;});})();});
 })();`;
@@ -395,6 +538,28 @@ document.querySelectorAll('[data-hear]').forEach(function(b){b.addEventListener(
   if(!x.ok){b.parentNode.querySelector('.vtxt').textContent=x.error||'Could not voice it.';return;}fit(j,x.secs);au.src=x.url;au.play().catch(function(){});
  }).catch(function(){b.disabled=false;b.textContent=was;});});});
 })();</script>`;
+
+// what each card on the refine page sets, for the info icon on its heading
+const CARD_INFO = {
+  'Overall style settings': 'The look of the whole video: colours, type, music, the opening and the close.',
+  'Colours': 'The colours the video uses, by role. They come from your brand.',
+  'Typography': 'The fonts for headlines, body text and labels.',
+  'Music and voice': 'The music track and whether a voice reads the script.',
+  'Music': 'The music track, and where in it the video starts.',
+  'Narration': 'Whether a voice reads the script, and which voice.',
+  'Opening hook and closing shot': 'How the video grabs attention in its first seconds, and the last frame people see.',
+  'Direction settings': 'The settings behind this direction\u2019s look and pace. Change one and the scenes follow.',
+  'People and names': 'The people and companies shown on screen, each with one role, so nobody changes role mid-video.',
+  'Logo motion': 'How your logo arrives in the reveal and the close.',
+  'Thumbnail': 'The still people see before they press play.',
+  'Your screens': 'The product screens the video is built from.',
+};
+const infoIcon = (t) => `<span class="hinfo" tabindex="0" role="img" aria-label="${e(t)}">i<span class="tip" role="tooltip">${e(t)}</span></span>`;
+function headInfo(html) {
+  let out = html;
+  for (const [title, tip] of Object.entries(CARD_INFO)) out = out.replace(`<h2>${title}</h2>`, `<h2>${title}${infoIcon(tip)}</h2>`).replace(`<h2 class="sechead">${title}</h2>`, `<h2 class="sechead">${title}${infoIcon(tip)}</h2>`);
+  return out.replace(/<h2 class="sechead">The scenes · ([^<]*)<\/h2>/, (m, rest) => `<h2 class="sechead">The scenes · ${rest}${infoIcon('Each scene of the video, in order: its words, how it moves and how long it runs.')}</h2>`);
+}
 
 export function buildRefineScreen(opts) {
   const { proposals: P, assets, state = {}, sample = false, embed = false } = opts;
@@ -431,9 +596,12 @@ export function buildRefineScreen(opts) {
   for (const id of [...needed]) { shelves[id] = motionShelf(id, motion, { n: 10 }); for (const x of [...shelves[id].same, ...shelves[id].like]) needed.add(x); }
   const MOTION = Object.fromEntries([...new Set([...needed, ...motion.map((x) => x.id)])].filter((id) => motionById.has(id)).map((id) => { const x = motionById.get(id); return [id, { name: x.name, family: x.family_group || x.family, energy: x.energy, line: x.one_line || '', preview: x.preview, poster: x.poster }]; }));
   const mtile = (id, j, k) => { const x = MOTION[id]; if (!x) return ''; return `<figure class="mtile" data-moment="${j}" data-slot="${k}" data-id="${e(id)}"><div class="mthumb"><video muted loop playsinline autoplay preload="metadata" poster="${e(assets.motion + x.poster)}" src="${e(assets.motion + x.preview)}"></video></div><figcaption><b title="${e(x.line)}">${e(x.name)}</b><button type="button" class="quiet changemotion" data-moment="${j}" data-slot="${k}">Change</button></figcaption></figure>`; };
-  const motionRow = (j) => (chosenRules[j].length ? `<div class="motionrow" data-moment="${j}">${chosenRules[j].map((id, k) => mtile(id, j, k)).join('')}</div>` : '<span class="muted">Composed by Claude from the direction</span>');
+  const motionRow = (j) => (chosenRules[j].length ? `<div class="motionrow" data-moment="${j}">${chosenRules[j].map((id, k) => mtile(id, j, k)).join('')}</div>` : '<span class="muted">Composed by Ultrademo from the direction</span>');
   // sound: a plain choice, with the model's own suggestion kept as one of the options
-  const SOUND_PRESETS = ['music only', 'music with interface sounds (clicks, pops)', 'music hits on each word', 'music with an effect sound', 'voice over music', 'music drops away, quiet beat'];
+  const SOUND_PRESETS = ['music keeps playing', 'music hits on each word', 'music swells', 'music drops away, quiet beat', 'voice over music'];
+  // effects and sounds per scene (D-115): drawn by the page script from FXLISTS; the setting is the video's
+  const fxSet = effectsSetting(d, video);
+  const fxRow = (mo, j) => `<div class="fxrow" data-fxj="${j}" data-fxpath="${e(p(`moments.${j}.fx`))}"></div>`;
   const soundSel = (j, cur) => `<select data-path="${p(`moments.${j}.sound`)}">${(SOUND_PRESETS.includes(cur) || !cur ? [] : [cur]).concat(SOUND_PRESETS).map((o) => `<option value="${e(o)}"${o === cur ? ' selected' : ''}>${e(o === cur && !SOUND_PRESETS.includes(cur) ? `Suggested: ${o}` : o.replace(/^\w/, (c) => c.toUpperCase()))}</option>`).join('')}</select>`;
   const field = (label, body, { hint = '', input = false } = {}) => `<div class="frow${input ? ' needs' : ''}"><div class="flab">${label}${hint ? `<small>${hint}</small>` : ''}</div><div class="fval">${body}</div></div>`;
 
@@ -447,21 +615,22 @@ export function buildRefineScreen(opts) {
     const used = claims.filter((c) => (mo.claims || []).includes(c.id));
     return `<article class="scene mrow" data-moment="${j}">
 <header class="shead"><span class="num">Scene ${String(j + 1).padStart(2, '0')}</span><span class="pill beat">${e(nice(mo.beat))}</span><span class="mname">${ed(p(`moments.${j}.name`), mo.name)}</span>
-<span class="stime"><input type="number" step="0.5" min="1" data-path="${p(`moments.${j}.duration_s`)}" value="${e(slots[j].duration_s)}" title="Claude proposed ${e(mo.duration_s)} s; the video stays within the length you set in the brief" aria-label="Scene length in seconds"> s <span class="mono muted">${slots[j].start_s.toFixed(1)}–${(slots[j].start_s + slots[j].duration_s).toFixed(1)} s</span></span></header>
+<span class="stime"><input type="number" step="0.5" min="1" data-path="${p(`moments.${j}.duration_s`)}" value="${e(slots[j].duration_s)}" title="Ultrademo proposed ${e(mo.duration_s)} s; the video stays within the length you set in the brief" aria-label="Scene length in seconds"> s <span class="mono muted">${slots[j].start_s.toFixed(1)}–${(slots[j].start_s + slots[j].duration_s).toFixed(1)} s</span></span></header>
 <p class="sgoal">${e(mo.goal)}</p>
 ${field('On screen', `<div class="copy" style="font-family:'${e(d.type.display)}',system-ui">${mo.copy.kicker !== null ? `<div class="k" style="font-family:'${e(d.type.mono)}',monospace">${ed(p(`moments.${j}.copy.kicker`), mo.copy.kicker || '')}</div>` : ''}<div class="h" style="font-weight:${dw(d.type.display)}">${ed(p(`moments.${j}.copy.headline`), mo.copy.headline)}</div><div class="s" style="font-family:'${e(d.type.text)}',system-ui">${ed(p(`moments.${j}.copy.sub`), mo.copy.sub || '')}</div><div class="counter" data-copy-counter="${j}" data-cap="${cap}"></div></div>`, { hint: `about ${rt} s to read`, input: true })}
 ${voiceRow(mo, j)}
 ${field('Motion style', motionRow(j), { hint: 'how things move', input: true })}
 ${field('Transition', `<div class="pair"><div><small>Comes in with</small>${sel(p(`moments.${j}.transition_in`), mo.transition_in, TRANSITIONS, { words: (v) => w('transition', v) })}</div><div><small>Continues into the next scene</small>${mo.carry ? `<span class="ed">${ed(p(`moments.${j}.carry.element`), mo.carry.element)}${ed(p(`moments.${j}.carry.action`), mo.carry.action)}</span>` : '<span class="muted">Last scene; nothing carries</span>'}</div></div>`)}
-${field('Sound', soundSel(j, mo.sound))}
+${field('Effects and sounds', fxRow(mo, j), { hint: 'what plays when something happens', input: true })}
+${field(Array.isArray(mo.fx) ? 'Music in this scene' : 'Sound', soundSel(j, mo.sound))}
 ${field('Keywords and facts', `<div class="facts"><span class="factsum" data-factsum="${j}">${used.length ? used.map((c) => `<span class="pill on">${e(c.short || c.text)}</span>`).join(' ') : '<span class="pill">None</span>'}</span>${claims.length ? `<details class="factpick"><summary>Change</summary><span class="chips">${claims.map((c) => `<label class="chip ${(mo.claims || []).includes(c.id) ? 'on' : ''}"><input type="checkbox" hidden data-claimref="${j}" data-path="${p(`moments.${j}.claims`)}" value="${e(c.id)}" ${(mo.claims || []).includes(c.id) ? 'checked' : ''}>${e(c.short || c.text)}</label>`).join('')}</span></details>` : ''}<div class="own"><small>Your own words or facts for this scene, one per line, shown as written</small><textarea rows="2" data-list="1" data-path="${p(`moments.${j}.keywords`)}" placeholder="e.g. Live in under 60 minutes">${e((mo.keywords || []).join('\n'))}</textarea></div></div>`, { hint: 'from your site, or your own' })}
 <details class="more"><summary>More about this scene</summary><div class="grid2">
-<div><em>Motion, in words</em><textarea data-path="${p(`moments.${j}.motion`)}">${e(mo.motion)}</textarea></div>
-<div><em>What the viewer takes in</em>${mo.reads ? ed(p(`moments.${j}.reads`), mo.reads) : '<span class="muted">—</span>'}</div>
-<div><em>Accent word</em>${ed(p(`moments.${j}.copy.accent`), mo.copy.accent || '')}</div>
-<div><em>Camera movement</em>${ed(p(`moments.${j}.camera`), mo.camera)}</div>
-<div><em>Shot blueprint</em>${sel(p(`moments.${j}.blueprint`), mo.blueprint, ['composed', ...bp.map((b) => b.id)], { words: (v) => (v === 'composed' ? 'Composed from motion styles' : nice(v)) })}</div>
-<div><em>Visuals</em>${(mo.visuals || []).map((v) => `<span class="pill">${e(v.ref)} · ${e(v.kind === 'rebuilt' ? 'rebuilt in code' : v.kind)}</span>`).join(' ') || '<span class="muted">type only</span>'}</div>
+<div><em>Motion graphics<span class="hinfo" tabindex="0" role="img" aria-label="What moves on screen in this scene, and when.">i<span class="tip" role="tooltip">What moves on screen in this scene, and when.</span></span></em><textarea data-path="${p(`moments.${j}.motion`)}">${e(mo.motion)}</textarea></div>
+<div><em>What the viewer should take away<span class="hinfo" tabindex="0" role="img" aria-label="The one thing the viewer should remember from this scene.">i<span class="tip" role="tooltip">The one thing the viewer should remember from this scene.</span></span></em>${mo.reads ? ed(p(`moments.${j}.reads`), mo.reads) : '<span class="muted">—</span>'}</div>
+<div><em>Highlighted word<span class="hinfo" tabindex="0" role="img" aria-label="The word shown in your accent colour.">i<span class="tip" role="tooltip">The word shown in your accent colour.</span></span></em>${ed(p(`moments.${j}.copy.accent`), mo.copy.accent || '')}</div>
+<div><em>Camera movement<span class="hinfo" tabindex="0" role="img" aria-label="How the view moves in this scene, or stays still.">i<span class="tip" role="tooltip">How the view moves in this scene, or stays still.</span></span></em>${ed(p(`moments.${j}.camera`), mo.camera)}</div>
+<div><em>Key shot<span class="hinfo" tabindex="0" role="img" aria-label="The arrangement this scene is built from.">i<span class="tip" role="tooltip">The arrangement this scene is built from.</span></span></em>${sel(p(`moments.${j}.blueprint`), mo.blueprint, ['composed', ...bp.map((b) => b.id)], { words: (v) => (v === 'composed' ? 'Composed from motion styles' : nice(v)) })}</div>
+<div><em>Visuals<span class="hinfo" tabindex="0" role="img" aria-label="The screens and pictures this scene uses, and how each is made.">i<span class="tip" role="tooltip">The screens and pictures this scene uses, and how each is made.</span></span></em>${(mo.visuals || []).map((v) => `<span class="pill">${e(v.ref)} · ${e(v.kind === 'rebuilt' ? 'rebuilt in code' : v.kind)}</span>`).join(' ') || '<span class="muted">type only</span>'}</div>
 </div></details>
 </article>`;
   }).join('');
@@ -482,7 +651,7 @@ ${field('Keywords and facts', `<div class="facts"><span class="factsum" data-fac
   const ALSO = { ground: ['canvas', 'background'], type: ['text_animation', 'text animation', 'typography', 'font'], colour: ['palette', 'color', 'accent'], sound: ['music', 'beat'], voice: ['narration', 'narrated'], camera: ['push', 'pan', 'locked'], product_presence: ['product'], texture: ['grain', 'glow'] };
   const saidFor = (k) => said.filter((x) => { const s = String(x.setting || '').toLowerCase(); const keys = [k, k.replace('_', ' '), w('dial', k).toLowerCase(), ...(ALSO[k] || [])]; return keys.some((key) => new RegExp(`(^|[^a-z_])${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).test(s)); });
   const matched = new Set();
-  const dials = Object.entries(DIALS).map(([k, positions]) => { const hits = saidFor(k); hits.forEach((h) => matched.add(h)); return `<div class="dial${hits.length ? ' said-on' : ''}"><em>${e(w('dial', k))}</em>${sel(p(`dials.${k}`), d.dials[k], positions)}${hits.length ? `<span class="said">you said “${hits.map((h) => e(h.word)).join('”, “')}”</span>` : ''}</div>`; }).join('');
+  const dials = Object.entries(DIALS).map(([k, positions]) => { const hits = saidFor(k); hits.forEach((h) => matched.add(h)); return `<div class="dial${hits.length ? ' said-on' : ''}"><em>${e(w('dial', k))}${DIAL_INFO[k] ? `<span class="hinfo" tabindex="0" role="img" aria-label="${e(DIAL_INFO[k])}">i<span class="tip" role="tooltip">${e(DIAL_INFO[k])}</span></span>` : ''}</em>${sel(p(`dials.${k}`), d.dials[k], positions)}${hits.length ? `<span class="said">you said “${hits.map((h) => e(h.word)).join('”, “')}”</span>` : ''}</div>`; }).join('');
   const unmatched = said.filter((x) => !matched.has(x));
   const settingsCard = `<div class="card" id="card-settings"><h2>Direction settings</h2>${unmatched.length ? `<p class="yousaid">You said: ${unmatched.map((x) => `<span>${e(x.word)} → ${e(x.setting)}</span>`).join('')}</p>` : ''}<div class="dials">${dials}</div><div><h3>Energy and text</h3><div class="small">${sel(p('energy'), d.energy, DIALS.energy)} <span class="muted">· text entrance</span> ${sel(p('text_animation'), d.text_animation, ['rise-mask', 'fade-up', 'slam', 'blur-in', 'scale-in', 'letters'])}</div></div></div>`;
   // the people and companies on screen: one name, one role; edited here, used as written in production
@@ -491,7 +660,8 @@ ${field('Keywords and facts', `<div class="facts"><span class="factsum" data-fac
   const cast = castGiven ? d.cast : castFromDirection(d, video.product);
  const castRow = (c) => `<div class="castrow" data-was="${e(c.was || c.name || '')}"><input type="text" class="castname" value="${e(c.name || '')}" placeholder="Name" aria-label="Name"><input type="text" class="castrole" value="${e(c.role || '')}" placeholder="Their role in the story" aria-label="Role"><button type="button" class="quiet castdel" aria-label="Remove">×</button></div>`;
   const castCard = `<div class="card" id="card-cast" data-castpath="${e(p('cast'))}"><h2>People and names</h2><p class="help">The people and companies the video shows. Each keeps one role across every scene; change any name here.</p><div class="castlist">${cast.map(castRow).join('')}</div>${!castGiven && cast.length ? '<p class="small castfound">Found in the scenes. Check each role; your changes apply to every scene.</p>' : ''}${cast.length ? '' : '<p class="small muted castempty">No people or companies named in these scenes yet. Add the ones you want, or leave it to production.</p>'}<button type="button" class="quiet" id="castadd">Add a person or company</button></div>`;
-  const soundCard = `<div class="card" id="card-sound"><h2>Music and voice</h2>${musicCard.replace(/^<div class="card" id="card-music"><h2>Music<\/h2>/, '<h3>Music</h3>').replace(/<\/div>$/, '')}<div class="soundvoice">${voiceCard.replace(/^<div class="card" id="card-voice"><h2>Narration<\/h2>/, '<h3>Narration</h3>').replace(/<\/div>$/, '')}</div></div>`;
+  const fxLevelCard = `<div class="soundfx"><h3>Effects</h3><div class="small muted">Visuals and sounds for what happens on screen: a payout, an approval, a goal reached. Each scene lists its own below.</div><div class="fxlevels" role="radiogroup" aria-label="Effects level">${[['lively', 'Lively'], ['subtle', 'Subtle'], ['none', 'None']].map(([v, l]) => `<label class="${fxSet.level === v ? 'on' : ''}"><input type="radio" name="fxlevel" value="${v}"${fxSet.level === v ? ' checked' : ''}> ${l}</label>`).join('')}</div><label class="fxiface"><input type="checkbox" id="fxiface"${fxSet.interface ? ' checked' : ''}><span>Interface sounds<br><small class="muted">Clicks, typing, pops and whooshes, added wherever they happen.</small></span></label><div class="small" style="margin-top:10px"><a href="${e(assets.fx || '/fx/')}gallery.html" target="_blank" rel="noopener">See every effect</a></div></div>`;
+  const soundCard = `<div class="card" id="card-sound"><h2>Music, voice and effects</h2>${musicCard.replace(/^<div class="card" id="card-music"><h2>Music<\/h2>/, '<h3>Music</h3>').replace(/<\/div>$/, '')}<div class="soundvoice">${voiceCard.replace(/^<div class="card" id="card-voice"><h2>Narration<\/h2>/, '<h3>Narration</h3>').replace(/<\/div>$/, '')}</div>${fxLevelCard}</div>`;
   const coloursCard = `<div class="card" id="card-colours"><h2>Colours</h2><div class="swgrid">${swatches}</div><div class="small muted clamp2">${e(d.ground)}</div></div>`;
   const typeCard = `<div class="card" id="card-type"><h2>Typography</h2><div>${typeRows}</div><div class="small muted clamp2">${e(d.type.why)}</div></div>`;
 
@@ -509,15 +679,23 @@ ${field('Keywords and facts', `<div class="facts"><span class="factsum" data-fac
     ['The vibe, your words', video.intake?.look?.words ? `${e(video.intake.look.words)}${pp('look')}` : '<span class="muted">none given</span>'],
   ];
   const claimRows = claims.map((cl) => `<li><label><input type="checkbox" data-path="claims.${e(cl.id)}.use" ${cl.use ? 'checked' : ''}> ${e(cl.short || cl.text)}</label> <span class="muted small">· ${e(cl.page_title || cl.page)}${cl.kind === 'sample' ? ' · a sample value shown in the product, not a claim' : ''}</span></li>`).join('');
-  const srcCards = (P.sources || []).filter((s) => s.kind !== 'logo').map((s) => s.kind === 'mockup' ? `<figure><div class="muted small" style="padding:18px 10px;border:1px dashed var(--line);border-radius:8px">HTML mockup, opened for its screens</div><figcaption><b>${e(nice(s.id))}</b> <span class="muted">${e(s.kind)}</span></figcaption></figure>` : `<figure><img src="${e(assets.project + s.path)}" alt="${e(s.what)}" loading="lazy"><figcaption><b>${e(nice(s.id))}</b> <span class="muted">${e(s.kind)}</span></figcaption></figure>`).join('');
+  const srcCards = (P.sources || []).filter((s) => s.kind !== 'logo').map((s) => s.kind === 'mockup' ? `<figure><div class="muted small" style="padding:18px 10px;border:1px dashed var(--line);border-radius:8px">HTML mockup, opened for its screens</div><figcaption><b>${e(nice(s.id))}</b> <span class="muted">${e(s.kind)}</span></figcaption></figure>` : `<figure><button type="button" class="sview" title="See it large" data-src="${e(assets.project + s.path)}" data-label="${e(nice(s.id))}" data-alt="${e(s.what)}"><img src="${e(assets.project + s.path)}" alt="${e(s.what)}" loading="lazy"></button><figcaption><b>${e(nice(s.id))}</b> <span class="muted">${e(s.kind)}</span></figcaption></figure>`).join('');
   const logoSrc = (P.sources || []).find((s) => s.kind === 'logo');
-  const assetsCard = `<div class="card" id="card-assets"><h2>Your screens</h2><p class="help">What the video is built from: captured from your site${(P.sources || []).some((s) => s.kind === 'mockup' || /^shot-|^mockup-/.test(s.id)) ? ' and the files you gave' : ''}. The scenes rebuild these screens in code with your own words.</p>
-<div class="srcgrid">${srcCards}</div></div>`;
+  const assetsCard = `<div class="card" id="card-assets"><h2>Your screens</h2><p class="help">What the video is built from: captured from your site${(P.sources || []).some((s) => s.kind === 'mockup' || /^shot-|^mockup-/.test(s.id)) ? ' and the files you gave' : ''}. The scenes will rebuild these screens in code with your own words. Click one to see it large.</p>
+<div class="srcgrid">${srcCards}</div>${(() => {
+    // D-113: the pictures already on the site, ticked to use as product UI (a tick saves at once)
+    const pics = (() => { try { return readPictures(opts.projectDir || ''); } catch { return []; } })();
+    if (!pics.length) return '';
+    const KW = { ui: 'Product UI', illustration: 'Illustration', picture: 'Picture' };
+    return `<h3 class="pichead">Pictures from your site</h3><p class="help">Found on your site's own pages. Ticked ones can be used as your product UI in the scenes.</p><div class="pgrid">${pics.map((x) => `<div class="ptile${x.use ? ' on' : ''}"><button type="button" class="pview" title="See it large" data-src="${e(assets.project + x.file)}" data-label="${e(KW[x.kind] || 'Picture')}" data-alt="${e(x.alt || '')}"><img src="${e(assets.project + x.file)}" alt="${e(x.alt || KW[x.kind] || 'Picture')}" loading="lazy"></button><label class="pcheck"><input type="checkbox" data-pic="${e(x.id)}"${x.use ? ' checked' : ''}><span>${e(KW[x.kind] || 'Picture')}</span></label></div>`).join('')}</div>`;
+  })()}${PICVIEW}</div>`;
   const LOGO_MOTIONS = [['fade-rise', 'Fade and rise', 'calm, works with any logo'], ['scale-pop', 'Scale pop', 'a springy pop in'], ['mark-then-name', 'Mark, then name', 'the icon first, then the name reveals left to right'], ['wipe-bar', 'Wipe in', 'a bar in your brand colour wipes the logo in'], ['flash-reveal', 'Flash, then logo', 'a flash of brand colour, then the logo'], ['glint', 'Glint', 'the logo appears and a light sweeps across it'], ['none', 'None', 'the logo simply appears']];
   const curLogoMotion = d.logo_motion || 'fade-rise';
   const brandCol = (d.palette || []).find((x) => /primary|brand|accent/i.test(x.role))?.value || '#1674f8';
   const groundCol = (d.palette || []).find((x) => /ground/i.test(x.role))?.value || '#ffffff';
-  const logoMotionCard = `<div class="card" id="card-logomotion"><h2>Logo motion</h2>${logoSrc ? `<p class="help">How your logo arrives in the reveal and the close. Each plays your own logo; pick one.</p><div class="lmgrid" style="--lm-brand:${e(brandCol)};--lm-ground:${e(groundCol)}">${LOGO_MOTIONS.map(([id, name, line]) => `<label class="lmopt${id === curLogoMotion ? ' on' : ''}"><input type="radio" name="logo_motion" value="${id}" data-path="${e(p('logo_motion'))}" ${id === curLogoMotion ? 'checked' : ''} hidden><div class="lmstage lm-${id}"><span class="lmflash"></span><span class="lmbar"></span><img src="${e(assets.project + logoSrc.path)}" alt=""><span class="lmglint"></span></div><b>${e(name)}</b><small>${e(line)}</small></label>`).join('')}</div>` : '<p class="help">No logo yet. Add it in the brief (Your brand) and the motions show here with your own logo.</p>'}</div>`;
+  const logoMotionCard = `<div class="card" id="card-logomotion"><h2>Logo motion</h2>${logoSrc ? `<p class="help">How your logo arrives in the reveal and the close. Each plays your own logo; pick one.</p><div class="lmgrid" style="--lm-brand:${e(brandCol)};--lm-ground:${e(groundCol)}">${LOGO_MOTIONS.map(([id, name, line]) => `<label class="lmopt${id === curLogoMotion ? ' on' : ''}"><input type="radio" name="logo_motion" value="${id}" data-path="${e(p('logo_motion'))}" ${id === curLogoMotion ? 'checked' : ''} hidden><div class="lmstage lm-${id}"><span class="lmflash"></span><span class="lmbar"></span><img src="${e(assets.project + (/^assets\/brand\/[a-z0-9-]+\.(svg|png|webp)$/.test(d.logo_file || '') ? d.logo_file : logoSrc.path))}" alt=""><span class="lmglint"></span></div><b>${e(name)}</b><small>${e(line)}</small></label>`).join('')}</div>
+<p class="lmwarn" id="lm-warn" hidden>Your logo is hard to see on this direction's ground. Ask for a version that reads on it below.</p>
+<div class="thask lmask"><label for="lm-ask">Ask for a change to the logo</label><div class="thaskrow"><textarea id="lm-ask" rows="2" placeholder="e.g. Make the wordmark white so it reads on the dark ground"></textarea><button type="button" class="quiet" id="lm-askgo" data-path="${e(p('logo_file'))}">Send to AI session</button></div><div class="small muted" id="lm-askstate" aria-live="polite"></div><div class="thworking" id="lm-working" hidden><span class="thspin" aria-hidden="true"></span><span id="lm-working-text">Ultrademo is changing the logo. The previews above redraw by themselves when it is done.</span></div></div>` : '<p class="help">No logo yet. Add it in the brief (Your brand) and the motions show here with your own logo.</p>'}</div>`;
   // D-82: the thumbnail, drawn by the server in this direction's look (/api/thumbs); the choice and the words are saved
   // with the direction as thumbnail: { layout, intro, title, line }
   const th = d.thumbnail || {};
@@ -529,9 +707,12 @@ ${field('Keywords and facts', `<div class="facts"><span class="factsum" data-fac
 <div class="thgrid">${thLayouts.map(([id, name, line]) => `<label class="thopt${(th.layout || 'info') === id ? ' on' : ''}" data-layout="${id}"><span class="thimg"><img alt="" data-thimg="${id}"><span class="thwait">Drawing…</span></span><b>${e(name)}</b><small>${e(line)}</small></label>`).join('')}</div>
 <div class="thtext"><label>Title <input type="text" id="th-title" maxlength="140" value="${e(th.title || '')}" placeholder="from your core message"></label><label>Line <input type="text" id="th-line" maxlength="200" value="${e(th.line || '')}" placeholder="from your core message"></label></div>
 ${thScreens.length ? `<div class="thtext"><label>Screen <select id="th-screen"><option value="">The first screenshot</option>${thScreens.map((s) => `<option value="${e(s.id)}"${th.screen === s.id ? ' selected' : ''}>${e(s.what || s.id)}</option>`).join('')}</select></label></div>` : ''}
-<div class="thask"><label for="th-ask">Ask for a change</label><div class="thaskrow"><textarea id="th-ask" rows="2" placeholder="e.g. Use the dashboard, not the homepage; a bigger title"></textarea><button type="button" class="quiet" id="th-askgo">Ask Claude</button></div><div class="small muted" id="th-askstate" aria-live="polite"></div></div>
+<div class="thask"><label for="th-ask">Ask for a change</label><div class="thaskrow"><textarea id="th-ask" rows="2" placeholder="e.g. Use the dashboard, not the homepage; a bigger title"></textarea><button type="button" class="quiet" id="th-askgo">Send to AI session</button></div><div class="small muted" id="th-askstate" aria-live="polite"></div><div class="thworking" id="th-working" hidden><span class="thspin" aria-hidden="true"></span><span id="th-working-text">Ultrademo is changing the thumbnail. The pictures above redraw by themselves when it is done.</span></div></div>
 <label class="thintro"><input type="checkbox" id="th-intro"${th.intro ? ' checked' : ''}> <span><b>Open the video with this thumbnail</b> <span class="muted">About 1.5 s, taken from scene 1.</span></span></label>
-<div class="thgen small muted"><span class="thtag">Connect a video AI service/API</span> for a generated picture option</div>
+${process.env.ULTRADEMO_IMAGE_AI === '1' ? `<div class="thgen"><div class="thgenhead"><button type="button" class="quiet small" id="th-gen-open" aria-expanded="false" aria-controls="th-gen">Connect an image AI service</button><span class="small muted">for a generated picture option</span></div>
+<div class="thgenbox" id="th-gen" hidden><p class="small">The service, its API address and your API key go in this video's env file, never on this page or in the chat. Pick the service, open the file, fill in the key (and the address for another service), save it, then check.</p>
+<div class="thgenrow"><label class="small">Service <select id="th-gen-svc">${IMAGE_AI_SERVICES.map((s) => `<option value="${e(s.id)}">${e(s.name)}</option>`).join('')}</select></label><button type="button" class="quiet small" id="th-gen-env">Open the env file</button><button type="button" class="quiet small" id="th-gen-check">Check</button></div>
+<div class="small gstate" id="th-gen-state" aria-live="polite"></div></div></div>` : ''}
 <p class="small muted" style="margin:0">Saved with the final video in 1280 × 720, 1080 × 1080 and 1200 × 630${thVertical ? ', and 1080 × 1920 for the vertical version' : ''}.</p></div>
 <div class="thlb" id="thlb" hidden><div class="thlbin"><button type="button" class="thx" aria-label="Close">×</button><div class="thlbimgs" id="thlbimgs"></div></div></div>`;
   const styleLine = P.style?.resolved === 'brand' ? 'a look derived from your brand' : d.video_style ? `the video style ${e((P.styles || []).find((s) => s.id === d.video_style)?.name || d.video_style)}` : 'a look derived from your brand';
@@ -549,6 +730,7 @@ ${stepper('refine', state, { embed })}
 <details class="fold"><summary>The brief, with the values proposed from your site</summary><div style="margin-top:8px">${briefRows.map(([k, x]) => `<div class="kv"><span>${e(k)}</span><div>${x}</div></div>`).join('')}</div></details>
 <details class="fold"><summary>Keywords and facts from your site (${claims.length})</summary><p class="small muted">Read from your site, each with the page it comes from. Untick one and no moment may cite it. These are the facts you stand behind.</p><ul>${claimRows || '<li class="muted">none found on the public pages</li>'}</ul></details>
 <details class="fold"><summary>Notes from the site read</summary><p class="small muted" style="margin-top:8px">${e((P.scout_notes || []).join(' '))}${opts.costLine ? ` · ${e(opts.costLine)}` : ''}</p></details></div>
+<div class="shelf" id="fxshelf" hidden role="dialog" aria-modal="true" aria-labelledby="fxshelftitle"><div class="sheet"><div class="head"><div><h2 id="fxshelftitle">Add an effect or sound</h2><div class="small muted">Each effect is a visual and its sound; press ▶ to hear it. Then say when it lands.</div></div><button type="button" class="quiet" id="fxshelfclose">Close</button></div><div id="fxgroups"></div><h3>Sounds on their own</h3><div class="fxsnds" id="fxsnds"></div></div></div>
 <div class="shelf" id="motionshelf" hidden role="dialog" aria-label="Change motion"><div class="sheet"><div class="head"><div><h2 id="shelftitle">Change motion</h2><div class="small muted" id="shelfnote">Pick by eye; the choice is saved for this moment.</div></div><button type="button" class="quiet" id="shelfclose">Close</button></div><h3>Same family, same purpose</h3><div class="optgrid" id="shelfsame"></div><h3>More like this</h3><div class="optgrid" id="shelflike"></div><h3 class="allhead"><button type="button" class="quiet" id="shelfallbtn">Browse all motion styles</button><select id="shelffam" hidden aria-label="Family"></select></h3><div class="optgrid" id="shelfall" hidden></div></div></div>
 <div class="bar"><button type="button" class="primary" id="confirm">Confirm direction ${letter} and write the plan</button><span class="status">${sample ? 'Static preview: nothing is saved.' : 'Edits save as you type.'}</span></div>
 </section>`;
@@ -557,19 +739,50 @@ ${stepper('refine', state, { embed })}
 var on=card.querySelector('.thopt.on');var cur={layout:on?on.getAttribute('data-layout'):'info'};
 function state(){var sc=card.querySelector('#th-screen');return {layout:cur.layout,intro:card.querySelector('#th-intro').checked,title:card.querySelector('#th-title').value.trim(),line:card.querySelector('#th-line').value.trim(),screen:sc?sc.value:''};}
 function save(){return fetch('/api/save',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({path:path,value:state()})});}
-function load(){fetch('/api/thumbs',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(!j.ok)return;j.files.forEach(function(f){var id=f.split('/').pop().replace('-wide.png','');var im=card.querySelector('img[data-thimg="'+id+'"]');if(im){im.onload=function(){im.parentNode.classList.add('ready');};im.src=f;}});if(j.defaults){card.querySelector('#th-title').placeholder=j.defaults.title||'';card.querySelector('#th-line').placeholder=j.defaults.line||'';}}).catch(function(){});}
+function load(){fetch('/api/thumbs',{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(!j.ok)return;j.files.forEach(function(f){var id=f.split('/').pop().replace('-wide.png','');var im=card.querySelector('img[data-thimg="'+id+'"]');if(im){im.onload=function(){im.parentNode.classList.add('ready');};if(im.getAttribute('src')===f&&im.complete)im.parentNode.classList.add('ready');else im.src=f;}});card.querySelector('.thgrid').classList.remove('busy');if(j.defaults){card.querySelector('#th-title').placeholder=j.defaults.title||'';card.querySelector('#th-line').placeholder=j.defaults.line||'';}}).catch(function(){});}
 function open(id){var box=document.getElementById('thlbimgs');box.innerHTML='<p class="small muted">Drawing every size…</p>';lb.hidden=false;fetch('/api/thumbs?layout='+encodeURIComponent(id),{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){if(!j.ok){box.textContent=j.error||'Could not draw the sizes.';return;}box.innerHTML=j.files.map(function(f,k){var z=j.sizes[k]||{};return '<figure><img src="'+f+'" alt=""><figcaption>'+(z.label||'')+' · '+(z.use||'')+'</figcaption></figure>';}).join('');});}
 card.querySelectorAll('.thopt').forEach(function(o){o.addEventListener('click',function(ev){ev.preventDefault();var id=o.getAttribute('data-layout');if(cur.layout===id){open(id);return;}cur.layout=id;card.querySelectorAll('.thopt').forEach(function(x){x.classList.toggle('on',x===o);});save();});});
 card.querySelector('#th-intro').addEventListener('change',save);
 var scSel=card.querySelector('#th-screen');if(scSel)scSel.addEventListener('change',function(){save().then(load);});
 // D-92: a change in words; Claude makes it (fields or the video's own thumbnail style) and answers here
 var ask=card.querySelector('#th-ask'),askState=card.querySelector('#th-askstate'),askPoll=null;
-function askShow(j){if(!j||!j.ok)return;if(j.pending){askState.textContent='Sent to Claude: '+j.request+' (it changes the thumbnail and answers here).';if(!askPoll)askPoll=setInterval(function(){fetch('/api/thumb-request',{cache:'no-store'}).then(function(r){return r.json();}).then(function(k){if(k.ok&&!k.pending){clearInterval(askPoll);askPoll=null;askShow(k);load();}});},3000);}else if(j.answer){askState.textContent='Claude: '+j.answer;}}
+var working=card.querySelector('#th-working'),grid=card.querySelector('.thgrid'),askT0=0;
+function busy(on){working.hidden=!on;grid.classList.toggle('busy',on);card.querySelectorAll('.thwait').forEach(function(w){w.textContent=on?'Updating…':'Drawing…';});card.querySelector('#th-askgo').disabled=on;}
+function askShow(j){if(!j||!j.ok)return;if(j.pending){askState.textContent='Sent to AI session: '+j.request;busy(true);if(!askT0)askT0=Date.now();if(!askPoll)askPoll=setInterval(function(){var s=Math.round((Date.now()-askT0)/1000);card.querySelector('#th-working-text').textContent='Ultrademo is changing the thumbnail ('+s+' s). The pictures above redraw by themselves when it is done.'+(s>180?' Still waiting? If your AI session looks idle, tell it: a thumbnail change is waiting.':'');fetch('/api/thumb-request',{cache:'no-store'}).then(function(r){return r.json();}).then(function(k){if(k.ok&&!k.pending){clearInterval(askPoll);askPoll=null;askT0=0;card.querySelector('#th-working-text').textContent='Redrawing the thumbnails…';askShow(k);load();}});},3000);}else{working.hidden=true;card.querySelector('#th-askgo').disabled=false;if(j.answer)askState.textContent='Ultrademo: '+j.answer;}}
 card.querySelector('#th-askgo').addEventListener('click',function(){var text=ask.value.trim();if(!text)return;fetch('/api/thumb-request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:text,path:path})}).then(function(r){return r.json();}).then(function(j){if(j.ok){ask.value='';askShow(j);}else askState.textContent=j.error||'Could not send it.';});});
 fetch('/api/thumb-request',{cache:'no-store'}).then(function(r){return r.json();}).then(askShow).catch(function(){});
 var tm=null;['#th-title','#th-line'].forEach(function(sel){card.querySelector(sel).addEventListener('input',function(){clearTimeout(tm);tm=setTimeout(function(){save().then(load);},900);});});
 lb.addEventListener('click',function(ev){if(ev.target===lb||ev.target.classList.contains('thx'))lb.hidden=true;});
+// the image AI service: the page only learns which service is named and whether the address and the key are filled in
+// D-103: the image AI panel is parked; its script runs only when the page shows it
+if(card.querySelector('#th-gen-open')){var gOpen=card.querySelector('#th-gen-open'),gBox=card.querySelector('#th-gen'),gSvc=card.querySelector('#th-gen-svc'),gState=card.querySelector('#th-gen-state');
+function gShow(s,asked){if(!s||!s.ok){gState.className='small gstate bad';gState.innerHTML='<span class="gmark">✕</span> Could not read the env file.';return;}if(s.service)gSvc.value=s.service;var good=s.service&&s.url&&s.key;
+var miss=[!s.service&&'the service',!s.url&&'the API address',!s.key&&'the API key'].filter(Boolean).join(', ');
+if(good){gState.className='small gstate good';gState.innerHTML='<span class="gmark">✓</span> Connected: the service, its address and the key are in the file.';gOpen.textContent='Image AI service connected';}
+else if(asked){gState.className='small gstate bad';gState.innerHTML='<span class="gmark">✕</span> Not saved in the file yet: '+miss+'. Fill '+(miss.indexOf(',')>0?'them':'it')+' in, save the file, then check again.';}
+else{gState.className='small gstate';gState.textContent=s.exists?'In '+s.path:'';}}
+function gGet(asked){fetch('/api/image-ai',{cache:'no-store'}).then(function(r){return r.json();}).then(function(s){gShow(s,asked);}).catch(function(){gShow(null,true);});}
+gOpen.addEventListener('click',function(){gBox.hidden=!gBox.hidden;gOpen.setAttribute('aria-expanded',gBox.hidden?'false':'true');});
+card.querySelector('#th-gen-env').addEventListener('click',function(){fetch('/api/image-ai/open',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({service:gSvc.value})}).then(function(r){return r.json();}).then(function(s){gShow(s,false);gState.className='small gstate';gState.textContent='Opened '+s.path+'. Fill in IMAGE_AI_KEY'+(gSvc.value==='other'?' and IMAGE_AI_URL':'')+', save the file, then press Check.';}).catch(function(){gShow(null,true);});});
+card.querySelector('#th-gen-check').addEventListener('click',function(){gGet(true);});
+gGet(false);}
 load();})();
+(function(){var lc=R.querySelector('#card-logomotion');if(!lc||!lc.querySelector('#lm-ask'))return;
+var ask=lc.querySelector('#lm-ask'),st=lc.querySelector('#lm-askstate'),wk=lc.querySelector('#lm-working'),go=lc.querySelector('#lm-askgo'),poll=null,t0=0;
+function show(j){if(!j||!j.ok)return;if(j.pending){st.textContent='Sent to AI session: '+j.request;wk.hidden=false;go.disabled=true;if(!t0)t0=Date.now();if(!poll)poll=setInterval(function(){var s=Math.round((Date.now()-t0)/1000);lc.querySelector('#lm-working-text').textContent='Ultrademo is changing the logo ('+s+' s). The previews above redraw by themselves when it is done.'+(s>180?' Still waiting? If your AI session looks idle, tell it: a logo change is waiting.':'');fetch('/api/logo-request',{cache:'no-store'}).then(function(r){return r.json();}).then(function(k){if(k.ok&&!k.pending){clearInterval(poll);poll=null;t0=0;lc.querySelector('#lm-working-text').textContent='Redrawing the logo…';location.hash='card-logomotion';location.reload();}});},3000);}else{wk.hidden=true;go.disabled=false;if(j.answer)st.textContent='Ultrademo: '+j.answer;}}
+go.addEventListener('click',function(){var text=ask.value.trim();if(!text)return;fetch('/api/logo-request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:text,path:go.dataset.path})}).then(function(r){return r.json();}).then(function(j){if(j.ok){ask.value='';show(j);}else st.textContent=j.error||'Could not send it.';});});
+fetch('/api/logo-request',{cache:'no-store'}).then(function(r){return r.json();}).then(show).catch(function(){});
+/* a logo that does not read on the ground: the contrast of its opaque pixels against the ground colour */
+function lum(r,g,b){var c=[r,g,b].map(function(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2];}
+var img=lc.querySelector('.lmstage img'),grid=lc.querySelector('.lmgrid');
+function check(){try{var w=Math.min(img.naturalWidth||200,400),h=Math.max(1,Math.round(w*(img.naturalHeight||100)/(img.naturalWidth||200)));var cv=document.createElement('canvas');cv.width=w;cv.height=h;var x=cv.getContext('2d');x.drawImage(img,0,0,w,h);var px=x.getImageData(0,0,w,h).data,n=0,dark=0;for(var i=0;i<px.length;i+=16){if(px[i+3]>128){n++;var L=lum(px[i],px[i+1],px[i+2]);var hx=getComputedStyle(grid).getPropertyValue('--lm-ground').trim().replace('#','');var G=hx.length===6?lum(parseInt(hx.slice(0,2),16),parseInt(hx.slice(2,4),16),parseInt(hx.slice(4,6),16)):1;var cr=(Math.max(L,G)+0.05)/(Math.min(L,G)+0.05);if(cr<2)dark++;}}
+if(n&&dark/n>0.4){lc.querySelector('#lm-warn').hidden=false;if(!ask.value)ask.value='The logo is hard to see on this ground: make a version that reads on it (for example a white wordmark).';}}catch(e){}}
+if(img){if(img.complete&&img.naturalWidth)check();else img.addEventListener('load',check);}
+})();
+var picBoxes=[].slice.call(R.querySelectorAll('input[data-pic]'));function picSave(k,on){var c=picBoxes[k];c.checked=on;c.closest('.ptile').classList.toggle('on',on);post('/api/pictures',{id:c.dataset.pic,use:on});}
+picBoxes.forEach(function(c,k){c.addEventListener('change',function(){picSave(k,c.checked);});});
+var sviews=[].slice.call(R.querySelectorAll('#card-assets .sview'));sviews.forEach(function(v,k){v.addEventListener('click',function(){if(!window.udPicView)return;window.udPicView.open(sviews.map(function(x){return{src:x.dataset.src,label:x.dataset.label,alt:x.dataset.alt};}),k,null);});});
+R.querySelectorAll('.ptile .pview').forEach(function(v,k){v.addEventListener('click',function(){if(!window.udPicView)return;window.udPicView.open([].slice.call(R.querySelectorAll('.ptile .pview')).map(function(x,j){return{src:x.dataset.src,label:x.dataset.label,alt:x.dataset.alt,use:picBoxes[j].checked};}),k,picSave);});});
 R.querySelectorAll('.lmopt input').forEach(function(r){r.addEventListener('change',function(){R.querySelectorAll('.lmopt').forEach(function(l){l.classList.toggle('on',l.querySelector('input').checked)});});});
 (function(){var cc=R.querySelector('#card-cast');if(!cc)return;var list=cc.querySelector('.castlist');
 function saveCast(){var rows=[].slice.call(list.querySelectorAll('.castrow')).map(function(r){var o={name:r.querySelector('.castname').value.trim(),role:r.querySelector('.castrole').value.trim()};if(r.dataset.was)o.was=r.dataset.was;return o}).filter(function(c){return c.name||c.role});save(cc.dataset.castpath,rows);var em=cc.querySelector('.castempty');if(em)em.hidden=rows.length>0;}
@@ -578,6 +791,9 @@ list.querySelectorAll('.castrow').forEach(wire);
 cc.querySelector('#castadd').addEventListener('click',function(){var r=document.createElement('div');r.className='castrow';r.innerHTML='<input type="text" class="castname" placeholder="Name" aria-label="Name"><input type="text" class="castrole" placeholder="Their role in the story" aria-label="Role"><button type="button" class="quiet castdel" aria-label="Remove">×</button>';list.appendChild(r);wire(r);r.querySelector('input').focus();});})();
 R.querySelectorAll('[data-claimref]').forEach(function(box){box.addEventListener('change',function(){var j=box.dataset.claimref;var on=[].slice.call(R.querySelectorAll('[data-claimref="'+j+'"]')).filter(function(b){return b.checked});box.closest('label').classList.toggle('on',box.checked);var sum=R.querySelector('[data-factsum="'+j+'"]');if(sum)sum.innerHTML=on.length?on.map(function(b){var sp=document.createElement('span');sp.className='pill on';sp.textContent=b.parentNode.textContent;return sp.outerHTML}).join(' '):'<span class="pill">None</span>';});});
 var MUSIC=${jsonForScript(music)};var MUSIC_BASE=${jsonForScript(assets.music)};var CHOSEN=${i};
+var FXCAT=${jsonForScript(listedEffects())};var FXSOUNDS=${jsonForScript(looseSounds().map((x) => ({ id: x.id, situations: x.situations || [] })))};var SFXFILE=${jsonForScript(Object.fromEntries(soundLibrary().map((x) => [x.id, x.file])))};
+var FXLISTS=${jsonForScript(d.moments.map((mo) => (Array.isArray(mo.fx) ? cleanFx(mo.fx) : null)))};var FXSET=${jsonForScript(fxSet)};var FXSAMPLE=${jsonForScript(FX_SAMPLE)};var FXCALL=${jsonForScript(FX_CALL)};var FXBASE=${jsonForScript(assets.fx || '/fx/')};var SFXBASE=${jsonForScript(assets.sfx || '/sfx/')};var FXPATH=${jsonForScript(p('effects'))};
+${FX_JS}
 var MOTION=${jsonForScript(MOTION)};var SHELVES=${jsonForScript(shelves)};var RULES=${jsonForScript(chosenRules)};var MOTION_BASE=${jsonForScript(assets.motion)};
 (function(){var shelf=R.querySelector('#motionshelf');if(!shelf)return;var cur=null;
 function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -609,7 +825,7 @@ var confirmBtn=R.querySelector('#confirm');
 confirmBtn.addEventListener('click',function(){if(SAMPLE){setStatus('Static preview: confirming writes nothing here. Run node plan/direction/run.mjs <project-dir>.');return;}confirmBtn.disabled=true;setStatus('Writing the plan…');clearTimeout(timer);Promise.resolve(flush()).then(function(){return post('/api/confirm',{chosen:CHOSEN})}).then(function(j){if(j.ok){location.href=j.next;return;}var list=R.querySelector('#problem-list');list.innerHTML=(j.problems||[{what:j.error||'could not confirm',fix:''}]).map(function(p){return '<li>'+(p.what||'')+' <span class="muted small">'+(p.fix||'')+'</span></li>'}).join('');R.querySelector('#problems').classList.add('on');window.scrollTo({top:0,behavior:'smooth'});setStatus('Fix the items at the top, then confirm again.',true);confirmBtn.disabled=false;}).catch(function(err){setStatus('Could not confirm: '+err.message,true);confirmBtn.disabled=false;});});
 })();`;
   const css = sketchCss(d, c).replace(/\.sk /g, '#screen-refine .sk ');
-  return { title: `Refine · ${video.product}`, body, script, css };
+  return { title: `Refine · ${video.product}`, body: headInfo(body), script, css };
 }
 
 // ---------------------------------------------------------------------------
@@ -617,7 +833,7 @@ confirmBtn.addEventListener('click',function(){if(SAMPLE){setStatus('Static prev
 // ---------------------------------------------------------------------------
 
 function wrap({ title, fonts, assets, css = '', bodies, scripts, vertical = false }) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${e(title)}</title>
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}<title>${e(title)}</title>
 <link rel="stylesheet" href="/ui/ui.css"><style>${allFontFaces(fonts || [], assets.fonts)}
 ${CSS}
 ${css}</style></head><body${vertical ? ' class="vert"' : ''}><main>
@@ -628,7 +844,7 @@ ${bodies.join('\n')}
 <script>
 (function(){var pin=document.querySelector('.ud-pin');if(pin)window.addEventListener('scroll',function(){pin.classList.toggle('stuck',window.scrollY>8)},{passive:true});})();
 ${scripts.join('\n')}
-</script></body></html>`;
+</script>${notesUi('direction')}</body></html>`;
 }
 
 export function renderStylePage(opts) {
@@ -664,7 +880,7 @@ window.__showTab((location.hash||'').replace('#','')||${jsonForScript(start)});`
 
 /** The confirmation page after the plan is written. */
 export function renderConfirmedPage({ plan, planPath, problems = [], chosen = null, missing = false, projectDir = '' }) {
-  const head = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Production · Ultrademo</title><link rel="stylesheet" href="/ui/ui.css"><style>${CSS}${PRODUCTION_CSS}</style></head><body><main><div class="ud-pin">${UD_HEAD}${progressBar('production')}</div>`;
+  const head = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${FAVICON}<title>Production · Ultrademo</title><link rel="stylesheet" href="/ui/ui.css"><style>${CSS}${PRODUCTION_CSS}</style></head><body><main><div class="ud-pin">${UD_HEAD}${progressBar('production')}</div>`;
   if (missing || !plan?.direction) return `${head}<h1>No direction chosen yet</h1><p class="lead">Nothing has been written to the plan in <span class="mono">${e(projectDir)}</span>. <a href="/direction">Back to the directions</a>.</p></main></body></html>`;
   const d = plan.direction;
   const scenes = plan.scenes || [];
@@ -674,10 +890,10 @@ export function renderConfirmedPage({ plan, planPath, problems = [], chosen = nu
   const rows = scenes.map((s, i) => `<li class="prow" data-scene="${e(s.id)}"><span class="pdot"></span><span class="pname"><b>${i + 1}. ${e(s.name)}</b><small>${e(nice(s.beat))} · ${e(s.start_s)}–${e(Math.round((s.start_s + s.duration_s) * 10) / 10)} s</small></span><span class="pstate">Waiting</span><span class="pstrip"></span></li>`).join('');
   return `${head}<h1>Direction ${e(d.chosen)} chosen: ${e(d.name)}</h1>
 <section class="card hero working" aria-live="polite">
-  <div class="work-head"><span class="spin" id="spin" aria-hidden="true"></span><div><h2 id="work-title">Claude is building your video</h2><p id="work-status">Nothing to do here. Each scene appears below as it is built; the review page opens by itself when the whole video is ready.</p></div></div>
+  <div class="work-head"><span class="spin" id="spin" aria-hidden="true"></span><div><h2 id="work-title">Ultrademo is building your video</h2><p id="work-status">Nothing to do here. Each scene appears below as it is built; the review page opens by itself when the whole video is ready.</p></div></div>
   <ol class="work-steps"><li data-step="started">Your AI agent picks up the plan</li><li data-step="kit">The kit: your colours, type and the product's screens rebuilt in code</li><li data-step="scenes">The scenes, one by one (<span id="scount">0</span> of ${scenes.length})</li><li data-step="joins">The joins between scenes, checked</li><li data-step="video">The whole video: music, voice and sound</li><li data-step="review">The review page</li></ol>
   <ul class="prows">${rows}</ul>
-  <div class="nudge" id="nudge" hidden><p><b>Claude has not started yet.</b> Paste this into the Claude chat:</p><div class="copyrow"><code id="nudge-text">the direction is confirmed</code><button type="button" id="nudge-copy">Copy</button></div></div>
+  <div class="nudge" id="nudge" hidden><p><b>Ultrademo has not started yet.</b> Paste this into your AI session:</p><div class="copyrow"><code id="nudge-text">the direction is confirmed</code><button type="button" id="nudge-copy">Copy</button></div></div>
   <p class="small muted" id="tokens" style="margin:14px 0 0"></p>
 </section>
 <div class="light" id="light" hidden role="dialog" aria-label="Frames"><figure><img id="light-img" alt=""><figcaption><button type="button" data-step="-1" aria-label="Previous frame">‹</button><span id="light-cap"></span><button type="button" data-step="1" aria-label="Next frame">›</button><button type="button" id="light-close">Close</button></figcaption></figure></div>
@@ -698,12 +914,14 @@ ${notes.length ? `<div class="kv"><span>Notes from the plan check</span><div><ul
 <aside class="info" aria-label="About production"><h3>About production</h3><ul>
 <li>Each scene is written as a small animated page over your kit, following its sketch, then built into frames.</li>
 <li>Every scene and every join between scenes is checked before you see it: frames at each event, how long anything sits still, words per second, and the facts it cites.</li>
-<li>The review page shows the whole video; you comment on a moment and a spot on the frame, and Claude fixes it.</li>
+<li>The review page shows the whole video; you comment on a moment and a spot on the frame, and Ultrademo fixes it.</li>
 </ul></aside>
 </main>
 <script>
 (function(){
-  var REVIEW = 'http://127.0.0.1:4330/', NUDGE_MS = 5 * 60 * 1000, done = false;
+  // watched: this page saw the video being built (it moves on to the review by itself only then; opened later to look,
+  // it stays and links the review)
+  var REVIEW = 'http://127.0.0.1:4330/', NUDGE_MS = 5 * 60 * 1000, done = false, watched = false;
   var title = document.getElementById('work-title'), st = document.getElementById('work-status'), nudge = document.getElementById('nudge'), spin = document.getElementById('spin');
   var WORDS = { waiting: 'Waiting', written: 'Written', built: 'Built, checking', passes: 'Built ✓', fixing: 'Fixing a check' };
   function mark(p){
@@ -726,7 +944,7 @@ ${notes.length ? `<div class="kv"><span>Notes from the plan check</span><div><ul
           im.addEventListener('click', function(){ openLight(s, k); }); box.appendChild(im); });
       }
     });
-    if (p.tokens) document.getElementById('tokens').textContent = 'About ' + fmt(p.tokens.read) + ' tokens read and ' + fmt(p.tokens.written) + ' written by Claude on this video so far (estimated from ' + p.tokens.tasks + ' tasks and the scene code; /cost in Claude Code shows the exact session use).';
+    if (p.tokens) document.getElementById('tokens').textContent = 'About ' + fmt(p.tokens.read) + ' tokens read and ' + fmt(p.tokens.written) + ' written by your AI session on this video so far (estimated from ' + p.tokens.tasks + ' tasks and the scene code; /cost in Claude Code shows the exact session use).';
   }
   function fmt(n){ return n >= 10000 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
   // a scene's frames large: click a frame, step with the arrows, Escape closes
@@ -735,18 +953,31 @@ ${notes.length ? `<div class="kv"><span>Notes from the plan check</span><div><ul
   function openLight(s, k){ cur = { s: s, k: k }; showLight(); light.hidden = false; }
   light.addEventListener('click', function(ev){ if (ev.target === light || ev.target.id === 'light-close') light.hidden = true; if (ev.target.dataset.step) { cur.k = (cur.k + Number(ev.target.dataset.step) + cur.s.frames.length) % cur.s.frames.length; showLight(); } });
   document.addEventListener('keydown', function(ev){ if (light.hidden) return; if (ev.key === 'Escape') light.hidden = true; if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') { cur.k = (cur.k + (ev.key === 'ArrowRight' ? 1 : -1) + cur.s.frames.length) % cur.s.frames.length; showLight(); } });
-  function ready(){ done = true; spin.classList.add('stop'); nudge.hidden = true; title.textContent = 'Your video is ready for review'; st.innerHTML = 'The review page opened in another tab. If not, <a href="' + REVIEW + '">open it here</a>.'; }
+  function ready(){ done = true; spin.classList.add('stop'); nudge.hidden = true; title.textContent = watched ? 'Your video is ready for review' : 'Your video is built'; if (watched) { st.innerHTML = 'Opening the review page… If nothing happens, <a href="' + REVIEW + '">open it here</a>.'; setTimeout(function(){ location.href = REVIEW; }, 1200); } else st.innerHTML = '<a href="' + REVIEW + '">Open the review page</a>'; }
   function poll(){
-    if (done) return;
     fetch('/api/production', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(p){
-      fetch(REVIEW, { mode: 'no-cors', cache: 'no-store' }).then(function(){ p.review = true; mark(p); if (p.video) ready(); }, function(){ mark(p); });
+      if (p.review_url) REVIEW = p.review_url;
+      // an earlier step was redone: this production is paused (an earlier video is not "ready"); say what is happening
+      if (p.stale === 'brief' || p.stale === 'outline' || p.stale === 'direction') {
+        spin.classList.remove('stop');
+        var STALE = { brief: ['You changed the brief', 'Ultrademo writes the outline again first, then the directions; the video is built again from them.', p.outline_url, 'the outline'],
+          outline: ['You changed the outline', 'Ultrademo writes the directions again from it; you pick one, and the video is built again from it.', p.outline_url, 'the outline'],
+          direction: ['You confirmed a direction again', 'Ultrademo sets the earlier scenes aside and builds the video again from this direction.', null, ''] }[p.stale];
+        done = false; watched = true;
+        title.textContent = STALE[0] + ': production starts over';
+        st.textContent = STALE[1] + ' ';
+        if (STALE[2]) { var a = document.createElement('a'); a.href = STALE[2]; a.textContent = 'Go to ' + STALE[3]; st.appendChild(a); }
+        nudge.hidden = true;
+        return;
+      }
+      fetch(REVIEW, { mode: 'no-cors', cache: 'no-store' }).then(function(){ p.review = true; mark(p); if (p.video) { if (!done) ready(); } else watched = true; }, function(){ mark(p); if (!p.video) watched = true; });
       nudge.hidden = !!p.started || Date.now() - (p.confirmed_at || Date.now()) < NUDGE_MS;
-      if (p.started && !done) st.textContent = 'Claude is on it. Nothing to do here; each scene appears below as it is built.';
+      if (p.started && !done) st.textContent = 'Ultrademo is on it. Nothing to do here; each scene appears below as it is built.';
     }).catch(function(){}).then(function(){ setTimeout(poll, 5000); });
   }
   document.getElementById('nudge-copy').addEventListener('click', function(ev){ var b = ev.currentTarget; (navigator.clipboard ? navigator.clipboard.writeText('the direction is confirmed') : Promise.reject()).then(function(){ b.textContent = 'Copied'; }, function(){ b.textContent = 'Select and copy'; }); setTimeout(function(){ b.textContent = 'Copy'; }, 2000); });
   var pin = document.querySelector('.ud-pin'); if (pin) window.addEventListener('scroll', function(){ pin.classList.toggle('stuck', window.scrollY > 8); }, { passive: true });
   poll();
 })();
-</script></body></html>`;
+</script>${notesUi('production')}</body></html>`;
 }
