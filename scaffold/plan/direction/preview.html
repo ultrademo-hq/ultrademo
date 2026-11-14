@@ -342,6 +342,17 @@ code{font:12.5px ui-monospace,Menlo,monospace;background:var(--bg);border:1px so
       while (li.firstChild) a.appendChild(li.firstChild); li.appendChild(a);
     });
     if (j.dashboard) { var d = ol.querySelector('.ud-dash'); d.querySelector('a').href = j.dashboard; d.hidden = false; }
+    // D-124: which video this is, in the header and the tab's title
+    var v = j.video; if (!v || !v.name) return;
+    var line = document.createElement('div'); line.className = 'ud-video';
+    var b = document.createElement('b'); b.textContent = v.name; line.appendChild(b);
+    var rest = [v.type, v.product].filter(Boolean).join(' · ');
+    if (rest) { var m = document.createElement('span'); m.textContent = rest; line.appendChild(m); }
+    line.title = [v.name, rest].filter(Boolean).join(' · ');
+    var old = ol.parentNode.querySelector('.ud-video'); if (old) old.remove();
+    ol.parentNode.insertBefore(line, ol.nextSibling);
+    var step = ol.querySelector('li[aria-current] .ud-sn');
+    document.title = v.name + (v.type ? ' (' + v.type + ')' : '') + (step ? ' · ' + step.textContent : '');
   }).catch(function(){});
 })();</script></div>
 <div class="tabs" id="tabs"><button type="button" data-tab="style">1 · Video style</button><button type="button" data-tab="direction">2 · Direction</button><button type="button" data-tab="refine">3 · Refine</button><span class="small muted" style="align-self:center">Static preview of a recorded run: three screens, no server.</span></div>
@@ -1085,9 +1096,14 @@ window.__showTab((location.hash||'').replace('#','')||"direction");
     notes.push({ text: t, from: C.stage || 'dashboard' }); ta.value = ''; draw(); save(); list.scrollTop = list.scrollHeight;
   });
   // the step bar reopens an earlier step whose page is not running; an earlier step's page says where the video is
+  // where the video was when this page opened: only a page opened on an earlier step is a reopened one. A video that
+  // moves on while its page is open (the user confirmed here and the next step is being written) is progress, not a
+  // reopen, so the banner never appears on a tab the user comes back to (2026-11-14, batch test)
+  var openedAt = null;
   function wire(j){
     if (!C.stage) return;
     var at = C.order.indexOf(j.furthest), me = C.order.indexOf(C.stage);
+    if (openedAt === null) openedAt = at;
     // drawn afresh each time (a refresh may find a step done, or undone by a re-saved brief)
     document.querySelectorAll('.ud-progress li.udn-ahead, .ud-progress li.udn-reopen').forEach(function(li){ li.classList.remove('udn-ahead', 'udn-reopen'); if (li.title === 'Reopen this step') li.title = C.names[li.getAttribute('data-stage')] || ''; });
     document.querySelectorAll('.ud-progress li[data-stage]').forEach(function(li){
@@ -1101,7 +1117,7 @@ window.__showTab((location.hash||'').replace('#','')||"direction");
     ready = j;
     if (pending) { var p = pending; pending = null; go(p); }
     var oldBar = document.querySelector('.udn-banner'); if (oldBar) oldBar.remove();
-    if (me >= 0 && me < at && C.banner !== false) {
+    if (me >= 0 && me < at && me < openedAt && C.banner !== false) {
       var bar = el('div', 'udn-banner'), txt = el('div');
       txt.appendChild(el('b', '', 'You reopened the ' + C.names[C.stage] + '.'));
       txt.appendChild(el('span', '', 'This video is at the ' + C.names[j.furthest] + ' step. Change anything and save: Ultrademo tells you which later steps it redoes before it does anything.'));

@@ -48,6 +48,8 @@ button.primary,.ud-btn--primary{box-shadow:inset 0 0 0 1.5px var(--ud-action-edg
 .ud-pin .ud-head{display:contents}.ud-pin .ud-head>a{order:0;flex:none}
 .ud-pin .ud-progress{order:1;flex:1 1 520px}.ud-pin .ud-progress>li:first-child{margin-left:auto}.ud-pin .ud-theme{order:2;flex:none}
 .ud-pin>:not(.ud-head):not(.ud-progress):not(script){order:3;flex:1 0 100%}
+/* D-124: which video this is, under the header row */
+.ud-video{display:flex;align-items:baseline;gap:8px;min-width:0;font-size:13.5px;color:var(--text-muted)}.ud-video b{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}.ud-video span{flex:none;white-space:nowrap}
 /* the stage bar never wraps: when the header row is narrow (its own width, not the window: some pages are narrower) the other stages show their number only (the name is the tooltip),
    and on a phone the bar takes its own row under the logo */
 .ud-progress li{flex:none;white-space:nowrap}.ud-progress .ud-sn{font-style:normal}

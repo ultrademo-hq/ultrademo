@@ -105,9 +105,14 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
     notes.push({ text: t, from: C.stage || 'dashboard' }); ta.value = ''; draw(); save(); list.scrollTop = list.scrollHeight;
   });
   // the step bar reopens an earlier step whose page is not running; an earlier step's page says where the video is
+  // where the video was when this page opened: only a page opened on an earlier step is a reopened one. A video that
+  // moves on while its page is open (the user confirmed here and the next step is being written) is progress, not a
+  // reopen, so the banner never appears on a tab the user comes back to (2026-11-14, batch test)
+  var openedAt = null;
   function wire(j){
     if (!C.stage) return;
     var at = C.order.indexOf(j.furthest), me = C.order.indexOf(C.stage);
+    if (openedAt === null) openedAt = at;
     // drawn afresh each time (a refresh may find a step done, or undone by a re-saved brief)
     document.querySelectorAll('.ud-progress li.udn-ahead, .ud-progress li.udn-reopen').forEach(function(li){ li.classList.remove('udn-ahead', 'udn-reopen'); if (li.title === 'Reopen this step') li.title = C.names[li.getAttribute('data-stage')] || ''; });
     document.querySelectorAll('.ud-progress li[data-stage]').forEach(function(li){
@@ -121,7 +126,7 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
     ready = j;
     if (pending) { var p = pending; pending = null; go(p); }
     var oldBar = document.querySelector('.udn-banner'); if (oldBar) oldBar.remove();
-    if (me >= 0 && me < at && C.banner !== false) {
+    if (me >= 0 && me < at && me < openedAt && C.banner !== false) {
       var bar = el('div', 'udn-banner'), txt = el('div');
       txt.appendChild(el('b', '', 'You reopened the ' + C.names[C.stage] + '.'));
       txt.appendChild(el('span', '', 'This video is at the ' + C.names[j.furthest] + ' step. Change anything and save: Ultrademo tells you which later steps it redoes before it does anything.'));

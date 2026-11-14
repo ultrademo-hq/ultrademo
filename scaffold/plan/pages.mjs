@@ -64,6 +64,26 @@ export function dashboardUrl(projectDir) {
   return null;
 }
 
+// 2026-11-14 (D-124): every page says which video it is (the batch test: two open videos looked the same)
+const VIDEO_TYPES = { launch: 'Launch', explainer: 'Explainer', spotlight: 'Spotlight', ad: 'Ad', tutorial: 'Tutorial' };
+const short = (s, n = 60) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1).trimEnd()}…` : t; };
+/** Which video this is, in the user's words: its title, else what it covers, else the idea it was queued with; its type
+ * and product. From the plan, else the brief seed or the queued idea (a brief not saved yet). */
+export function videoIdentity(projectDir) {
+  const read = (f) => { try { return JSON.parse(fs.readFileSync(path.join(projectDir, f), 'utf8')); } catch { return null; } };
+  const v = read('plan.json')?.video || {};
+  const it = v.intake || {};
+  const seed = read('brief-seed.json') || {};
+  const q = read('queued.json') || {};
+  const raw = short(it.title || it.cover || seed.cover || q.cover || '');
+  const name = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : '';
+  const tpl = String(v.template || '').replace(/-/g, ' ');
+  const type = VIDEO_TYPES[it.video_type || seed.video_type || q.video_type] || (tpl ? tpl.charAt(0).toUpperCase() + tpl.slice(1) : '');
+  const product = short(v.product || seed.product || '', 40);
+  if (!name && !type && !product) return null;
+  return { name: name || product || path.basename(projectDir), type, product: name ? product : '' };
+}
+
 /** Where each stage of this project can be opened right now (null where its page is not running). */
 export function stageLinks(projectDir) {
   const live = {};
@@ -78,6 +98,7 @@ export function stageLinks(projectDir) {
     review: live.review && has('out/video.mp4') ? `${live.review}?review=1` : null,
     delivery: live.review && has('review/approved.json') ? live.review : null,
     dashboard: dashboardUrl(projectDir),
+    video: videoIdentity(projectDir),
   };
 }
 

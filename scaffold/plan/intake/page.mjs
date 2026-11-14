@@ -453,6 +453,17 @@ export function progressBar(current) {
       while (li.firstChild) a.appendChild(li.firstChild); li.appendChild(a);
     });
     if (j.dashboard) { var d = ol.querySelector('.ud-dash'); d.querySelector('a').href = j.dashboard; d.hidden = false; }
+    // D-124: which video this is, in the header and the tab's title
+    var v = j.video; if (!v || !v.name) return;
+    var line = document.createElement('div'); line.className = 'ud-video';
+    var b = document.createElement('b'); b.textContent = v.name; line.appendChild(b);
+    var rest = [v.type, v.product].filter(Boolean).join(' · ');
+    if (rest) { var m = document.createElement('span'); m.textContent = rest; line.appendChild(m); }
+    line.title = [v.name, rest].filter(Boolean).join(' · ');
+    var old = ol.parentNode.querySelector('.ud-video'); if (old) old.remove();
+    ol.parentNode.insertBefore(line, ol.nextSibling);
+    var step = ol.querySelector('li[aria-current] .ud-sn');
+    document.title = v.name + (v.type ? ' (' + v.type + ')' : '') + (step ? ' · ' + step.textContent : '');
   }).catch(function(){});
 })();</script>`;
 }

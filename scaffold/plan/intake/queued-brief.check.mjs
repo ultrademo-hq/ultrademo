@@ -32,6 +32,10 @@ try {
   check('the look words come from the first brief', (await page.inputValue('#f-look')) === 'calm, editorial');
   check('effects come from the first brief', await page.isChecked('input[name="effects"][value="subtle"]'));
   check('the started-from line says it was filled', /Filled from the brief of acme-launch/.test(await page.textContent('#started-from')));
+  await page.waitForSelector('.ud-video', { timeout: 5000 }).catch(() => null);
+  const who = await page.evaluate(() => ({ line: document.querySelector('.ud-video')?.textContent || '', title: document.title }));
+  check(`the header names the video (${who.line})`, /The export panel/.test(who.line) && /Spotlight/.test(who.line) && /Acme/.test(who.line));
+  check(`so does the tab title (${who.title})`, who.title === 'The export panel (Spotlight) · Brief');
   check('the queue card is on the Overview step', await page.$eval('#s-queue', (el) => el.closest('.bstep').dataset.step) === '2');
   // the Local App folder check, one level down
   await page.evaluate(() => { const c = document.querySelector('input[name="screens"][value="local"]'); if (c && !c.checked) c.click(); });
