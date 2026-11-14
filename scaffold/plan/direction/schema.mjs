@@ -610,7 +610,7 @@ export function copyProblems(d, template) {
   d.moments.forEach((m, i) => {
     const cap = m.words_max || (spine.find((s) => s.beat === m.beat) || {}).cap || 8;
     const n = countWords(`${m.copy.headline || ''} ${m.copy.sub || ''}`);
-    if (n > cap) out.push({ moment: i, what: `Moment ${i + 1} "${m.name}" has ${n} words on screen; the limit is ${cap}`, fix: 'shorten the headline or the second line' });
+    if (n > cap) out.push({ moment: i, path: `moments.${i}.copy.headline`, what: `Moment ${i + 1} "${m.name}" has ${n} words on screen; the limit is ${cap}`, fix: 'shorten the headline or the second line' });
   });
   return out;
 }

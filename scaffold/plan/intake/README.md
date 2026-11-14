@@ -16,7 +16,7 @@ A request from the chat arrives in `brief-seed.json` and the page drafts the ove
 
 ## Queued videos
 
-Ideas queued on Start become their own folders beside this one when the brief is saved (`plan/queue.mjs`): `queued.json` and a `brief-seed.json`. The dashboard lists them as Queued with "Start this one"; the Delivery page's "Start a new video" becomes "Next in queue" when the same product (saved brand or site) has one. Each goes through its own brief, outline, direction and review. Tests: `node --test plan/queue.test.mjs`.
+Ideas queued on the Overview step (moved from Start on 2026-11-14: a brief seeded from the chat opens on Overview, so Start is often skipped) become their own folders beside this one when the brief is saved (`plan/queue.mjs`): `queued.json` and a `brief-seed.json`. The dashboard lists them as Queued with "Start this one"; the Delivery page's "Start a new video" becomes "Next in queue" when the same product (saved brand or site) has one. Each goes through its own brief, outline, direction and review. Tests: `node --test plan/queue.test.mjs`.
 
 ## Run
 
@@ -83,9 +83,13 @@ Every field but the address has it (a checkbox beside a text field, an option in
 
 A story field or the length left empty is proposed too, but stored with the note `Left empty at intake; the direction step proposes it.`, so it comes back empty, not ticked (2026-11-11: a reopened brief showed Unsure ticked everywhere). A tick that came back from the saved brief clears as soon as the user types in that field; a tick they make on the page keeps what they type as a hint.
 
+## The Local App folder and a queued brief
+
+"The folder containing your codebase": typed, or **Choose folder…**, which opens the system's folder dialog from this server (`pickFolder` in `plan/local.mjs`; fixed arguments; same-origin POST; one at a time; Finder's Option-Command-C hint when no picker exists). A folder with no codebase at its top offers those one and two folders down (`codebasesBelow`). A queued video's seed carries `base`, the brief it was queued from without what belongs to that video only (`briefBase`); the page fills from it, opens on Overview and drafts at once. Browser check, not in the suite: `node plan/intake/queued-brief.check.mjs`.
+
 ## Carrying the chat request in (`brief-seed.json`)
 
-When the user has already said something in the chat ("an explainer video of https://…"), the agent writes `<project>/brief-seed.json` with only those fields (`url`, `product`, `video_type`, `scope`, `feature`, `length_s`, `claim`, `viewer`, `pain_point`, `proof_moment`, `cta`, `notes`) before it starts the page. A fresh brief opens with them filled in and nothing ticked Unsure; once a brief is saved, the plan wins and the seed is ignored. The agent never saves the brief for the user in review mode.
+When the user has already said something in the chat ("an explainer video of https://…"), the agent writes `<project>/brief-seed.json` with only those fields (`url`, `product`, `video_type`, `scope`, `feature`, `length_s`, `claim`, `viewer`, `pain_point`, `proof_moment`, `cta`, `notes`, and `queue`: other video ideas the user mentioned, as `[{ "video_type", "cover" }]`, shown in the queue card for the user to confirm) before it starts the page. A fresh brief opens with them filled in and nothing ticked Unsure; once a brief is saved, the plan wins and the seed is ignored. The agent never saves the brief for the user in review mode.
 
 ## Validation
 

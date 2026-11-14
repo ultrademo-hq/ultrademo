@@ -14,7 +14,7 @@
 import { readPictures, setPictureUse, mergePictures, withPictureSources } from '../pictures.mjs';
 import { localDay } from '../day.mjs';
 import { refuseForeignHost } from '../localhost.mjs';
-import { checkFolder, startCommand, localAddress, answers, writeStartTask, startState } from '../local.mjs';
+import { checkFolder, startCommand, localAddress, answers, writeStartTask, startState, pickFolder, pickerCommand } from '../local.mjs';
 import { readLocalPages, discoverPages, outlinePages, homeShot } from '../localpages.mjs';
 import fs from 'node:fs';
 import http from 'node:http';
@@ -31,7 +31,7 @@ import { BRANDS_DIR, listBrands, findBrandFor, brandFromVideo, brandChanges, sav
 import { renderIntakePage, renderSavedPage, TEMPLATE_META, LABELS, ASSETS_DIR, musicTracks } from './page.mjs';
 import { CAPTION_CHOICES, defaultCaptionsFor } from '../captions/styles.mjs';
 import { previewFonts } from '../captions/captions.mjs';
-import { notesRoutes, ensureNote } from '../notes.mjs';
+import { notesRoutes, ensureNote, syncBrandNotes } from '../notes.mjs';
 import { openFonts } from '../direction/frames.mjs';
 
 // the open fonts the video can use, one preview face per family (the brief's font picker); file names map to their files
@@ -935,6 +935,7 @@ export function startServer(opts) {
         const brands = listBrands(brandsDir).map((b) => ({ slug: b.slug, name: b.name, domain: b.domain }));
         return send(res, 200, renderIntakePage({ prefill, seed, projectDir, today: todayISO(opts.now?.()), elevenlabs, voices: voiceOptions({ elevenlabs }), brands, fonts: openFontList().list }));
       }
+      if (req.method === 'GET' && url.pathname === '/api/pick-folder') return sendJson(res, 200, { ok: true, available: Boolean(pickerCommand()) });
       if (req.method === 'GET' && url.pathname === '/api/pages') return sendJson(res, 200, { ok: true, ...stageLinks(projectDir) });
       if (req.method === 'GET' && url.pathname.startsWith('/assets/')) return sendAsset(res, url.pathname);
       if (req.method === 'GET' && url.pathname.startsWith('/ui/')) return sendUi(res, url.pathname);
@@ -975,6 +976,12 @@ export function startServer(opts) {
         return sendJson(res, 200, { ok: true, ...demoAccountState(projectDir) });
       }
       // D-117: the product on this computer. The page never runs anything: the start is a task for the AI session
+      if (req.method === 'POST' && url.pathname === '/api/pick-folder') {
+        const r = await pickFolder();
+        if (!r.ok) return sendJson(res, 200, r);
+        const f = checkFolder(r.folder);
+        return sendJson(res, 200, f.ok ? { ...f, picked: true, up: f.address ? (await answers(f.address)).up : false } : { ...f, picked: true, folder: f.folder || r.folder });
+      }
       if (req.method === 'POST' && url.pathname === '/api/local-check') {
         const body = JSON.parse((await readBody(req)) || '{}');
         const f = checkFolder(body.folder);
@@ -1106,6 +1113,8 @@ export function startServer(opts) {
         if (clash) saved = { ...clash };
         const b = saveBrandProfile({ ...brandFromVideo(video, saved), ...(name ? { name } : {}), ...(saved ? { slug: saved.slug } : {}) }, { projectDir, dir: brandsDir, now: opts.now?.() || new Date(), from: path.basename(projectDir) });
         console.log(`Brand ${saved ? 'updated' : 'saved'}: ${b.name} (${path.join(brandsDir, b.slug)}).`);
+        // notes ticked "keep for the brand" before the brand was saved go into its memory now
+        try { syncBrandNotes(projectDir, brandsDir); } catch {}
         refreshDashboard(projectDir);
         return sendJson(res, 200, { ok: true, name: b.name, slug: b.slug, updated: Boolean(saved) });
       }
@@ -1151,7 +1160,7 @@ export function startServer(opts) {
         if (Array.isArray(body.queue) && body.queue.length) {
           const { queueVideos } = await import('../queue.mjs');
         try { ensureNote(projectDir, result.video?.intake?.notes, 'brief', { brandsDir }); } catch {}
-          queued = queueVideos(projectDir, body.queue, { url: result.video.url, product: result.video.product, brand: typeof body.saved_brand === 'string' ? body.saved_brand : null, notes: '' });
+          queued = queueVideos(projectDir, body.queue, { url: result.video.url, product: result.video.product, brand: typeof body.saved_brand === 'string' ? body.saved_brand : null, notes: '', brief: result.video });
           if (queued.length) console.log(`Queued for later: ${queued.map((q) => q.project).join(', ')} (each opens on the dashboard with its own brief).`);
         }
         refreshDashboard(projectDir);

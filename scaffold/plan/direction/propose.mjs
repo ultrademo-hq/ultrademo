@@ -240,7 +240,7 @@ export function applyProposals(video, brand) {
 export async function proposeDirections({ video, brand, claims, sources, fonts, styles, music, pace, blueprints, scout, projectDir, style = null, model = DEFAULT_MODEL, key, ledger, fetchImpl, log }) {
   const spine = TEMPLATE_SPINES[video.template] || TEMPLATE_SPINES.launch;
   const { notesBlock } = await import('../notes.mjs');
-  const prompt = directionsPrompt({ video, brand, claims, sources, fonts, styles, music, pace, blueprints, spine, templateLength: templateLength(video.template), siteFonts: scout.tokens.fonts, style }) + (projectDir ? codeReadBlock(readCodeRead(projectDir)) : '') + notesBlock(projectDir);
+  const prompt = directionsPrompt({ video, brand, claims, sources, fonts, styles, music, pace, blueprints, spine, templateLength: templateLength(video.template), siteFonts: scout.tokens.fonts, style }) + (projectDir ? codeReadBlock(readCodeRead(projectDir)) : '') + notesBlock(projectDir) + (await import('../queue.mjs')).queuedDirectionBlock(projectDir);
   const system = directionsSystem();
   fs.mkdirSync(path.join(projectDir, 'direction'), { recursive: true });
   fs.writeFileSync(path.join(projectDir, 'direction', 'directions-prompt.md'), `# Directions prompt\n\nStatus: what the directions call was asked, written by plan/direction/propose.mjs; the model ${model}; the style choice ${style === 'brand' ? 'derived from the brand' : style?.id ? style.id : 'left to the skill'}.\n\n## System\n\n${system}\n\n## User\n\n${prompt}\n`);

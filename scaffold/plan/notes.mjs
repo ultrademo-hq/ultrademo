@@ -41,16 +41,29 @@ export function readNotes(projectDir, { brandsDir = null } = {}) {
 export function writeNotes(projectDir, notes, { brandsDir = null } = {}) {
   const clean = (Array.isArray(notes) ? notes : []).map(cleanNote).filter(Boolean).slice(0, MAX_NOTES);
   fs.writeFileSync(file(projectDir), JSON.stringify({ notes: clean, updated: new Date().toISOString() }, null, 1) + '\n');
-  const slug = brandsDir ? brandSlugOf(projectDir, brandsDir) : null;
-  if (slug) {
-    // the brand keeps notes from all its videos; this video's own kept notes replace what it kept before
-    const me = path.basename(path.resolve(projectDir));
-    const bf = path.join(brandsDir, slug, 'notes.json');
-    const others = (readJson(bf, { notes: [] }).notes || []).filter((n) => n && n.project !== me && !clean.some((c) => c.id === n.id));
-    const kept = clean.filter((n) => n.brand).map((n) => ({ ...n, from: 'brand', project: me }));
-    fs.writeFileSync(bf, JSON.stringify({ notes: [...others, ...kept].slice(0, MAX_NOTES) }, null, 1) + '\n');
-  }
+  if (brandsDir) syncBrandNotes(projectDir, brandsDir, clean);
   return clean;
+}
+
+/** Copy this video's kept notes into its saved brand's memory (brands/<slug>/notes.json). Also run when the brand is
+ * saved after the notes were ticked, so a note kept before the brand existed is not lost. Returns the brand or null. */
+export function syncBrandNotes(projectDir, brandsDir, clean = null) {
+  const brand = noteBrand(projectDir, brandsDir);
+  if (!brand) return null;
+  const list = clean || (readJson(file(projectDir), { notes: [] }).notes || []).map(cleanNote).filter(Boolean);
+  // the brand keeps notes from all its videos; this video's own kept notes replace what it kept before
+  const me = path.basename(path.resolve(projectDir));
+  const bf = path.join(brandsDir, brand.slug, 'notes.json');
+  const others = (readJson(bf, { notes: [] }).notes || []).filter((n) => n && n.project !== me && !list.some((c) => c.id === n.id));
+  const kept = list.filter((n) => n.brand).map((n) => ({ ...n, from: 'brand', project: me }));
+  fs.writeFileSync(bf, JSON.stringify({ notes: [...others, ...kept].slice(0, MAX_NOTES) }, null, 1) + '\n');
+  return brand;
+}
+
+/** The saved brand this video's kept notes go to ({ slug, name }), or null when its brand is not saved yet. */
+export function noteBrand(projectDir, brandsDir) {
+  const slug = brandsDir ? brandSlugOf(projectDir, brandsDir) : null;
+  return slug ? { slug, name: readJson(path.join(brandsDir, slug, 'brand.json'), {})?.name || slug } : null;
 }
 
 // a saved brand's slug for this video (by its address or name), without importing brands.mjs's whole surface
@@ -61,7 +74,7 @@ function brandSlugOf(projectDir, brandsDir) {
   for (const d of (() => { try { return fs.readdirSync(brandsDir); } catch { return []; } })()) {
     const b = readJson(path.join(brandsDir, d, 'brand.json'));
     if (!b) continue;
-    if ((host && b.domain === host) || (b.name && video.product && b.name.toLowerCase() === String(video.product).toLowerCase())) return d;
+    if ((host && b.domain === host) || (b.name && video.product && b.name.toLowerCase() === String(video.product).toLowerCase()) || (b.from && b.from === path.basename(path.resolve(projectDir)))) return d;
   }
   return null;
 }
@@ -173,7 +186,7 @@ async function reopenStageNow(projectDir, stage, { timeoutMs = 15000 } = {}) {
 export async function notesRoutes(req, res, url, projectDir, h) {
   if (url.pathname === '/api/notes' && req.method === 'GET') {
     const { stageLinks } = await import('./pages.mjs');
-    h.sendJson(res, 200, { ok: true, notes: readNotes(projectDir, { brandsDir: h.brandsDir }), furthest: furthestStage(projectDir), links: stageLinks(projectDir) });
+    h.sendJson(res, 200, { ok: true, notes: readNotes(projectDir, { brandsDir: h.brandsDir }), brand: noteBrand(projectDir, h.brandsDir), furthest: furthestStage(projectDir), links: stageLinks(projectDir) });
     return true;
   }
   if ((url.pathname === '/api/notes' || url.pathname === '/api/reopen') && req.method === 'POST') {
@@ -182,7 +195,7 @@ export async function notesRoutes(req, res, url, projectDir, h) {
     try { body = JSON.parse((await h.readBody(req)) || '{}'); } catch { h.sendJson(res, 400, { ok: false, error: 'Could not read that.' }); return true; }
     if (url.pathname === '/api/notes') {
       const notes = writeNotes(projectDir, body.notes, { brandsDir: h.brandsDir });
-      h.sendJson(res, 200, { ok: true, notes });
+      h.sendJson(res, 200, { ok: true, notes, brand: noteBrand(projectDir, h.brandsDir) });
       return true;
     }
     const u = await reopenStage(projectDir, String(body.stage || ''));

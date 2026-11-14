@@ -260,6 +260,22 @@ export function saveEdits(projectDir, edits) {
  * Build the plan from the chosen direction and write it when it validates.
  * @returns {{ ok: true, planPath, plan, problems } | { ok: false, problems }}
  */
+/** Where a problem is on the Refine page: { moment, path } with the path inside the direction (moments.2.copy.headline),
+ * so the page's "Show me where" can open that scene and focus that field. */
+export function whereOfPath(parts) {
+  const path = (parts || []).map(String).join('.');
+  const moment = parts?.[0] === 'moments' && Number.isInteger(Number(parts[1])) ? Number(parts[1]) : null;
+  return { ...(moment != null ? { moment } : {}), ...(path ? { path } : {}) };
+}
+export function whereOfScene(problem, scenes = []) {
+  const j = (scenes || []).findIndex((s) => s && s.id === problem.scene);
+  const m = j >= 0 ? j : /^scenes\[(\d+)\]$/.test(problem.scene || '') ? Number(problem.scene.slice(7, -1)) : null;
+  if (m == null) return {};
+  const w = String(problem.what || '');
+  const field = /narration|voice|spoken|said/i.test(w) ? 'voice' : /headline|on screen|words|copy/i.test(w) ? 'copy.headline' : /duration|seconds|length/i.test(w) ? 'duration_s' : null;
+  return { moment: m, ...(field ? { path: `moments.${m}.${field}` } : {}) };
+}
+
 export function confirmDirection(projectDir, chosen, opts = {}) {
   const P = loadProposals(projectDir);
   if (!P) return { ok: false, problems: [{ what: 'no proposals in this project yet', fix: 'run node plan/direction/run.mjs <project-dir> first' }] };
@@ -267,7 +283,7 @@ export function confirmDirection(projectDir, chosen, opts = {}) {
   const d = renameCast(P.directions[chosen]);
   if (!d) return { ok: false, problems: [{ what: `there is no direction ${chosen + 1}`, fix: 'choose one of the directions shown' }] };
   const parsed = DirectionProposalSchema.safeParse(stripExtras(d));
-  if (!parsed.success) return { ok: false, problems: parsed.error.issues.slice(0, 8).map((i) => ({ what: `${i.path.join('.')}: ${i.message}`, fix: 'fix the field on the page' })) };
+  if (!parsed.success) return { ok: false, problems: parsed.error.issues.slice(0, 8).map((i) => ({ what: `${i.path.join('.')}: ${i.message}`, fix: 'fix the field on the page', ...whereOfPath(i.path) })) };
   const video = JSON.parse(JSON.stringify(P.video));
   const letter = LETTERS[chosen];
   const copy = copyProblems(d, video.template);
@@ -324,7 +340,7 @@ export function confirmDirection(projectDir, chosen, opts = {}) {
   const existing = readJson(path.join(projectDir, 'plan.json'), {});
   const plan = { ...existing, version: 1, video: planVideo, direction, scenes };
   const check = validatePlan(JSON.parse(JSON.stringify(plan)), { catalogue });
-  if (!check.ok) return { ok: false, problems: check.problems.filter((p) => p.level === 'error').map((p) => ({ what: `${p.scene}: ${p.what}`, fix: p.fix })) };
+  if (!check.ok) return { ok: false, problems: check.problems.filter((p) => p.level === 'error').map((p) => ({ what: `${p.scene}: ${p.what}`, fix: p.fix, ...whereOfScene(p, plan.scenes) })) };
   const planPath = writeJson(path.join(projectDir, 'plan.json'), plan);
   // the chosen sketch is also written on its own so the plan's `sketches` path resolves
   const sketchFile = path.join(dirOf(projectDir), 'sketches', `${letter}.html`);
@@ -418,7 +434,7 @@ export function startServer(opts) {
         const { readSummary } = await import('./summary.mjs');
         const common = { proposals: P, assets: SERVER_ASSETS, projectDir, state, costLine: costLineOf(), live: Boolean(opts.runOpts), motion: motionGallery(), summary: readSummary(projectDir, P), summaryOn: Boolean(opts.runOpts) && !opts.runOpts.fixtures, summaryFailed };
         if (p === '/style') return send(res, 200, renderStylePage(common));
-        if (p === '/direction') return send(res, 200, renderDirectionPage(common));
+        if (p === '/direction') return send(res, 200, renderDirectionPage({ ...common, queued: readJson(path.join(dirOf(projectDir), 'queued.json'), { queued: [] }).queued || [] }));
         return send(res, 200, renderRefinePage(common));
       }
       if (req.method === 'GET' && p.startsWith('/project/')) return sendFile(req, res, projectDir, decodeURIComponent(p.slice('/project/'.length)));
@@ -625,6 +641,29 @@ export function startServer(opts) {
           writeState(projectDir, { stage: 'style', working: false });
           return sendJson(res, 500, { ok: false, error: err.message });
         } finally { busy = false; }
+      }
+      if (req.method === 'POST' && p === '/api/queue-direction') {
+        // 2026-11-14: a direction not picked for this video, queued as another video with this video's brief
+        const body = JSON.parse((await readBody(req)) || '{}');
+        const i = Number(body.index);
+        const P = loadProposals(projectDir);
+        const d = Number.isInteger(i) && i >= 0 ? P?.directions?.[i] : null;
+        if (!d) return sendJson(res, 400, { ok: false, error: 'queue one of the directions shown' });
+        const cover = typeof body.cover === 'string' ? body.cover.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 600) : '';
+        if (!cover) return sendJson(res, 400, { ok: false, error: 'Say what the video covers.' });
+        const video = readJson(path.join(projectDir, 'plan.json'), {})?.video || P.video;
+        const { queueVideos, directionSeed } = await import('../queue.mjs');
+        const { findBrandFor } = await import('../brands.mjs');
+        const brand = findBrandFor(video, BRANDS_DIR)?.slug || null;
+        const style = P.style?.resolved === 'brand' ? 'brand' : (d.video_style || P.style?.resolved || null);
+        const made = queueVideos(projectDir, [{ video_type: body.video_type, cover }], { url: video.url, product: video.product, brand, notes: '', brief: video, direction: directionSeed(d, { from: path.basename(projectDir), letter: LETTERS[i], style }) });
+        if (!made.length) return sendJson(res, 400, { ok: false, error: 'Could not queue it.' });
+        const qf = path.join(dirOf(projectDir), 'queued.json');
+        const list = readJson(qf, { queued: [] }).queued || [];
+        list.push({ index: i, letter: LETTERS[i], project: made[0].project, video_type: made[0].video_type, cover, at: made[0].at });
+        writeJson(qf, { queued: list.slice(-24) });
+        console.log(`Queued direction ${LETTERS[i]} "${d.name}" as another video: ${made[0].project} (its brief is filled from this one; it waits on the dashboard).`);
+        return sendJson(res, 200, { ok: true, project: made[0].project });
       }
       if (req.method === 'POST' && p === '/api/choose') {
         const body = JSON.parse((await readBody(req)) || '{}');

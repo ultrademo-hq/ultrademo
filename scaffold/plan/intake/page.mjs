@@ -420,6 +420,7 @@ details.sitelines{margin:0 0 12px;border:1px solid var(--line);border-radius:10p
 .bar{position:sticky;bottom:0;background:var(--bg);padding:12px 0 16px;border-top:1px solid var(--line);display:flex;align-items:center;gap:14px;flex-wrap:wrap}
 .bar .status{color:var(--muted);font-size:13.5px}.bar .status.bad{color:var(--bad)}
 .problems{background:var(--card);border:1px solid var(--bad);border-radius:10px;padding:10px 14px;margin:0 0 14px;display:none}.problems.on{display:block}.problems ul{margin:4px 0 0;padding-left:18px}
+.problems .showme{margin-left:6px;padding:2px 10px}@keyframes udflash{0%,100%{box-shadow:0 0 0 0 transparent}25%,75%{box-shadow:0 0 0 3px #f2c200}}.udflash{animation:udflash 1.6s ease 1;border-radius:10px}
 .kv{display:grid;grid-template-columns:150px 1fr;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:14px}.kv:last-child{border-bottom:0}.kv>span{color:var(--muted);font:500 11.5px/1.4 var(--font-mono);text-transform:uppercase;letter-spacing:.1em;padding-top:4px}
 @media(max-width:520px){.kv{grid-template-columns:1fr;gap:2px}}
 .pill{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin-left:6px;background:var(--bg)}
@@ -529,14 +530,6 @@ ${sample ? '<div class="notice"><b>Static preview.</b> Sample values, no server:
     </div>
   </section>
   <div class="bslot" data-slot="notes"></div>
-  <section class="card queue" id="s-queue">
-    <div class="qhead"><div><b>More video ideas for this product?</b> <span class="muted small">Queue them; each waits on the dashboard with this brand and its own brief.</span></div><button type="button" class="quiet" id="qopen" aria-expanded="false" aria-controls="qbody">Add to queue</button></div>
-    <div id="qbody" hidden>
-      <div class="qrows" id="qrows"></div>
-      <button type="button" class="quiet" id="qadd">+ Another idea</button>
-      <p class="small muted" style="margin:10px 0 0">Each one gets its own brief, filled from this one (brand, product, notes), and its own outline, direction and review. They are made one at a time: start the next from the dashboard, or from this video's Delivery page.</p>
-    </div>
-  </section>
 </div>
 <div class="bstep" data-step="2" hidden>
   <header class="bhead"><div class="ud-eyebrow">Brief · step 2 of 5</div><h1>Here is the video Ultrademo would make</h1><p class="lead">Read it, change anything in your own words, and the key attributes follow from it.</p></header>
@@ -557,6 +550,14 @@ ${sample ? '<div class="notice"><b>Static preview.</b> Sample values, no server:
     <div class="agrid bslot" data-slot="attrs"></div><div class="bslot" data-slot="attrs-after"></div>
   </section>
   <div class="bslot" data-slot="2b"></div>
+  <section class="card queue" id="s-queue">
+    <div class="qhead"><div><b>More video ideas for this product?</b> <span class="muted small">Queue them; each waits on the dashboard with this brand and its own brief.</span></div><button type="button" class="quiet" id="qopen" aria-expanded="false" aria-controls="qbody">Add to queue</button></div>
+    <div id="qbody" hidden>
+      <div class="qrows" id="qrows"></div>
+      <button type="button" class="quiet" id="qadd">+ Another idea</button>
+      <p class="small muted" style="margin:10px 0 0">Each one gets its own brief, filled from this one (brand, voice, music, look, screens and the rest), so you only review it, and its own outline, direction and review. They are made one at a time: start the next from the dashboard, or from this video's Delivery page.</p>
+    </div>
+  </section>
 </div>
 <div class="bstep" data-step="3" hidden>
   <header class="bhead"><div class="ud-eyebrow">Brief · step 3 of 5</div><h1>Screens and footage</h1><p class="lead">Where the video's pictures come from, and how Ultrademo reaches the screens behind your login.</p></header>
@@ -582,7 +583,7 @@ ${sample ? '<div class="notice"><b>Static preview.</b> Sample values, no server:
 .lhome{display:flex;gap:14px;align-items:center;margin:6px 0 4px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--surface,#fff)}.lhome[hidden]{display:none}.lthumb{all:unset;cursor:zoom-in;flex:none;width:168px;aspect-ratio:16/10;border-radius:8px;overflow:hidden;border:1px solid var(--line)}.lthumb img{width:100%;height:100%;object-fit:cover;object-position:top;display:block}.lthumb:focus-visible{outline:3px solid var(--fg);outline-offset:2px}.lphead{display:flex;gap:10px;align-items:center;justify-content:space-between}.lphead input{width:240px;max-width:50%;box-sizing:border-box;padding:7px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface,#fff);color:var(--text);font:inherit;font-size:14px}
 .lpall summary{cursor:pointer;font-weight:600;font-size:14px}.lpall ul{list-style:none;margin:8px 0 0;padding:0;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px}
 .lpall li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:7px 10px;border-top:1px solid var(--line);font-size:13.5px}.lpall li:first-child{border-top:0}.lpall li code{font-size:12.5px}.lpall li .m{color:var(--muted);font-size:12px}.lpall li input{width:16px;height:16px;margin:0;accent-color:var(--fg)}
-.ptile .lptag{font-size:11.5px;color:var(--muted)}.localapp .lab{margin-top:8px}#local-status.bad{color:#b42318}#local-status.ok{color:#0f6a40}</style>
+.ptile .lptag{font-size:11.5px;color:var(--muted)}.localapp .lab{margin-top:8px}.lcands{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}.lcands[hidden]{display:none}#local-pickhint:empty{display:none}#local-status.bad{color:#b42318}#local-status.ok{color:#0f6a40}</style>
 <section class="card hero" id="s-product">
   <h2>Your product</h2>
   <p class="help">Give the address and we read the page title and headings to suggest the rest. Nothing else is read here.</p>
@@ -660,9 +661,11 @@ ${sample ? '<div class="notice"><b>Static preview.</b> Sample values, no server:
       <label class="opt"><input type="checkbox" name="screens" value="figma"><div><b>A Figma file</b><span>Needs a paid Figma plan: the free plan's limit stops the export part-way.</span></div></label>
     </div>
     <div class="sub localapp" id="screens-local" hidden>
-      <div class="lab"><label for="f-local-folder">Code folder</label><span class="hint">read only: Ultrademo never changes it and never opens env files or keys</span></div>
-      <div class="row"><input type="text" id="f-local-folder" placeholder="~/code/my-app" spellcheck="false"><button type="button" id="local-check">Check</button></div>
+      <div class="lab"><label for="f-local-folder">The folder containing your codebase</label><span class="hint">read only: Ultrademo never changes it and never opens env files or keys</span></div>
+      <div class="row"><input type="text" id="f-local-folder" placeholder="~/code/my-app" spellcheck="false"><button type="button" id="local-pick" hidden>Choose folder…</button><button type="button" id="local-check">Check</button></div>
+      <div class="small muted" id="local-pickhint"></div>
       <div class="small muted" id="local-found" aria-live="polite"></div>
+      <div class="lcands" id="local-cands" hidden></div>
       <div class="lrun" id="local-run">
         <div class="lab"><label for="f-local-command">Start command</label><span class="hint">your AI session runs it in that folder; Claude Code shows it and asks you first</span></div>
         <input type="text" id="f-local-command" placeholder="npm run dev" spellcheck="false">
@@ -1342,16 +1345,41 @@ window.__SAMPLE__ = ${sample ? 'true' : 'false'};
   $('#local-check').addEventListener('click', function(){
     var found = $('#local-found'); found.textContent = 'Checking…';
     fetch('/api/local-check', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ folder: $('#f-local-folder').value.trim() }) })
-      .then(function(r){ return r.json(); }).then(function(f){
-        if (!f.ok) { found.textContent = f.error || 'Could not check the folder.'; return; }
+      .then(function(r){ return r.json(); }).then(localFound).catch(function(){ found.textContent = 'Could not reach the page server.'; });
+  });
+  // the result of a check, typed or picked: the codebases below are offered as buttons when the folder holds none itself
+  function localFound(f){
+        var found = $('#local-found'), cands = $('#local-cands'); cands.innerHTML = ''; cands.hidden = true;
+        if (!f.ok) {
+          found.textContent = f.error || 'Could not check the folder.';
+          if (f.folder) $('#f-local-folder').value = f.folder;
+          (f.candidates || []).forEach(function(c){ var b = document.createElement('button'); b.type = 'button'; b.className = 'quiet small'; b.textContent = 'Use ' + c.rel + (c.kind ? ' (' + c.kind + ')' : ''); b.addEventListener('click', function(){ $('#f-local-folder').value = c.folder; $('#local-check').click(); }); cands.appendChild(b); });
+          cands.hidden = !(f.candidates || []).length;
+          return;
+        }
         $('#f-local-folder').value = f.folder;
         if (!$('#f-local-command').value.trim() && f.command) $('#f-local-command').value = f.command;
         if (!localAddr() && f.address) $('#f-local-address').value = f.address;
         if (!$('#f-product').value.trim() && f.name) $('#f-product').value = f.name;
         found.textContent = 'Found ' + f.name + (f.kind ? ' (' + f.kind + ')' : '') + (f.scripts && f.scripts.length ? ' · scripts: ' + f.scripts.join(', ') : '') + '.' + (f.up ? ' It is already running at ' + f.address + '.' : '') + (f.installed === false ? ' Its packages are not installed yet: your AI session asks you before installing them.' : '');
         if (typeof refreshSummaries === 'function') refreshSummaries();
-      }).catch(function(){ found.textContent = 'Could not reach the page server.'; });
-  });
+  }
+  // Choose folder…: the system's own folder dialog, opened by the page server on this computer
+  (function(){
+    var pick = $('#local-pick'), hint = $('#local-pickhint'), mac = /Mac/i.test(navigator.platform || navigator.userAgent);
+    var typed = mac ? 'Or in Finder: select the folder, then press Option-Command-C to copy its path and paste it here.' : 'Or copy the folder\u2019s path from your file manager and paste it here.';
+    fetch('/api/pick-folder', { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ pick.hidden = !j.available; hint.textContent = j.available ? '' : typed; }).catch(function(){ hint.textContent = typed; });
+    pick.addEventListener('click', function(){
+      var found = $('#local-found'); pick.disabled = true; found.textContent = 'The folder picker is open on your computer. It may be behind this window.';
+      fetch('/api/pick-folder', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }).then(function(r){ return r.json(); }).then(function(f){
+        pick.disabled = false;
+        if (f.unavailable) { pick.hidden = true; hint.textContent = typed; found.textContent = ''; return; }
+        if (f.cancelled) { found.textContent = ''; return; }
+        if (f.busy) { found.textContent = f.error; return; }
+        localFound(f);
+      }).catch(function(){ pick.disabled = false; found.textContent = 'Could not reach the page server.'; });
+    });
+  })();
   var lpoll = null;
   function startLocal(){
     if (window.__SAMPLE__) { lsay('The static preview does not start apps.'); return Promise.resolve(false); }
@@ -2014,10 +2042,12 @@ window.__SAMPLE__ = ${sample ? 'true' : 'false'};
   }
   prefill(window.__PREFILL__);
   // where this brief started: a Claude chat request, the queue, or the dashboard (saved with the brief)
-  var startedFrom = (window.__PREFILL__ && window.__PREFILL__.intake && window.__PREFILL__.intake.started_from) || 'dashboard', startedFromVideo = '';
+  var startedFrom = (window.__PREFILL__ && window.__PREFILL__.intake && window.__PREFILL__.intake.started_from) || 'dashboard', startedFromVideo = '', filledFrom = false;
   // what the user already said in the chat (brief-seed.json, written by the agent): filled in, never marked Unsure
   (function seed(s){
     if (!s || typeof s !== 'object') return;
+    // 2026-11-14: a queued video carries the brief it was queued from (voice, music, look, screens and the rest)
+    if (s.from === 'queue' && s.base && typeof s.base === 'object') { try { prefill(s.base); filledFrom = true; } catch (err) { console.warn('queued brief', err); } }
     ['url', 'product', 'claim', 'viewer', 'pain_point', 'proof_moment', 'cta', 'feature', 'notes'].forEach(function(k){ var el = $('#f-'+k); if (el && typeof s[k] === 'string' && s[k].trim()) el.value = s[k].trim(); });
     ['video_type', 'scope', 'product_type', 'narration'].forEach(function(k){ if (typeof s[k] === 'string' && s[k]) setRadio(k, s[k]); });
     if (typeof s.length_s === 'number' && s.length_s > 0) { lengthEl.value = s.length_s; lengthTouched = true; }
@@ -2028,14 +2058,16 @@ window.__SAMPLE__ = ${sample ? 'true' : 'false'};
     if (s.brand) { var br = $('input[name="saved_brand"][value="' + String(s.brand).replace(/[^a-z0-9-]/gi, '') + '"]'); if (br) { br.checked = true; useBrand(br.value); } }
     // an unsaved brand from the brief this video was queued from
     else if (s.brand_data && typeof s.brand_data === 'object') { applyBrand(s.brand_data); $('#brand-status').textContent = 'From the brief this video was queued from (' + (s.brand_data.name || 'this product') + '). Change anything for this video.'; }
-    seededFromChat = s.from !== 'queue';
+    // more video ideas the user mentioned in the chat go into the queue card, for the user to confirm
+    (Array.isArray(s.queue) ? s.queue : []).slice(0, 12).forEach(function(q){ if (q && typeof q.cover === 'string' && q.cover.trim()) addIdea(['launch', 'explainer', 'spotlight', 'ad', 'tutorial'].indexOf(q.video_type) >= 0 ? q.video_type : 'explainer', q.cover.trim().slice(0, 600)); });
+    seededFromChat = s.from !== 'queue' || filledFrom;
     startedFrom = s.from === 'queue' ? 'queue' : 'chat'; startedFromVideo = s.brand_from || '';
   })(window.__SEED__);
   if (!radio('tone')) setRadio('tone', 'balanced');
   if (!radio('music')) setRadio('music', 'auto');
   if (!radio('autonomy')) setRadio('autonomy', 'user-reviewed');
   if (!radio('narration')) setRadio('narration', 'narrated');
-  (function(){ var el = $('#started-from'); if (!el) return; var w = { chat: 'Started from an AI session request', queue: 'Started from the queue' + (startedFromVideo ? ' (after ' + startedFromVideo + ')' : ''), dashboard: 'Started from the dashboard' }[startedFrom]; if (w) { el.textContent = w; el.hidden = false; } })();
+  (function(){ var el = $('#started-from'); if (!el) return; var w = { chat: 'Started from an AI session request', queue: filledFrom ? 'Filled from the brief of ' + (startedFromVideo || 'the video it was queued from') + ': review each step and save' : 'Started from the queue' + (startedFromVideo ? ' (after ' + startedFromVideo + ')' : ''), dashboard: 'Started from the dashboard' }[startedFrom]; if (w) { el.textContent = w; el.hidden = false; } })();
   if (!radio('product_type')) setRadio('product_type', 'website');
   typeToSurf();
   if (!radio('footage')) setRadio('footage', 'none');
@@ -2048,9 +2080,18 @@ window.__SAMPLE__ = ${sample ? 'true' : 'false'};
 
   // ---- save
   var saveBtn = $('#save'), saveStatus = $('#save-status');
+  // a problem's field: its step opens, the field scrolls into view and flashes, its first input takes the focus
+  function showField(wrap){
+    if (wrap.closest('.bstep')) go(stepOfEl(wrap));
+    var d = wrap.closest('details'); if (d) d.open = true;
+    setTimeout(function(){ wrap.scrollIntoView({ behavior: 'smooth', block: 'center' }); wrap.classList.remove('udflash'); void wrap.offsetWidth; wrap.classList.add('udflash');
+      var f = wrap.querySelector('input:not([type=hidden]):not([disabled]),textarea,select,[contenteditable]'); if (f) setTimeout(function(){ f.focus({ preventScroll: true }); }, 350); }, 60);
+  }
   function showProblems(list){
     var box = $('#problems'), ul = $('#problem-list'); ul.innerHTML = '';
-    list.forEach(function(p){ var li = document.createElement('li'); li.textContent = (p.what || p) + (p.fix ? ' — ' + p.fix : ''); ul.appendChild(li); });
+    list.forEach(function(p){ var li = document.createElement('li'); li.textContent = (p.what || p) + (p.fix ? ' — ' + p.fix : ''); ul.appendChild(li);
+      var wrap = p.field && $('.field[data-field="' + p.field + '"]');
+      if (wrap) { var b = document.createElement('button'); b.type = 'button'; b.className = 'quiet small showme'; b.textContent = 'Show me where'; b.addEventListener('click', function(){ showField(wrap); }); li.appendChild(document.createTextNode(' ')); li.appendChild(b); } });
     box.classList.toggle('on', list.length > 0);
     // open the section that holds the first problem
     var first = list.find(function(p){ return p.field; });

@@ -8,6 +8,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { execFile, execFileSync } from 'node:child_process';
 import { z } from 'zod';
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
@@ -36,19 +37,53 @@ const NODE_KINDS = [
 ];
 const FILE_KINDS = [['manage.py', 'Django', 8000, 'python manage.py runserver'], ['Gemfile', 'Rails', 3000, 'bin/rails server'], ['mix.exs', 'Phoenix', 4000, 'mix phx.server'], ['artisan', 'Laravel', 8000, 'php artisan serve']];
 
+// what marks a folder as holding an app's codebase (any one is enough); the framework is read from the first ones
+const CODEBASE_FILES = ['package.json', 'manage.py', 'Gemfile', 'mix.exs', 'artisan', 'go.mod', 'Cargo.toml', 'pyproject.toml', 'requirements.txt', 'composer.json', 'pom.xml', 'build.gradle', 'deno.json', 'index.html'];
+const SKIP_DIRS = new Set(['node_modules', 'vendor', 'dist', 'build', 'out', 'target', 'coverage', 'tmp', 'Library', 'Applications', 'Pictures', 'Music', 'Movies']);
+const hasCodebase = (dir) => CODEBASE_FILES.some((f) => fs.existsSync(path.join(dir, f)));
+
+/** Folders one and two levels below `dir` that hold a codebase (a monorepo's apps, a repo inside a projects folder).
+ * Hidden folders, dependency and build folders are skipped, symbolic links are not followed, and the look is capped. */
+export function codebasesBelow(dir, { max = 6, cap = 400 } = {}) {
+  const out = [];
+  let seen = 0;
+  const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((x) => x.isDirectory() && !x.name.startsWith('.') && !SKIP_DIRS.has(x.name)).map((x) => x.name).sort(); } catch { return []; } };
+  const level1 = list(dir);
+  for (const a of level1) { if (++seen > cap || out.length >= max) break; const d = path.join(dir, a); if (hasCodebase(d)) out.push(d); }
+  if (out.length < max) for (const a of level1) {
+    const d1 = path.join(dir, a);
+    if (out.includes(d1)) continue;
+    for (const b of list(d1)) { if (++seen > cap || out.length >= max) break; const d = path.join(d1, b); if (hasCodebase(d)) out.push(d); }
+  }
+  return out.map((folder) => ({ folder, rel: path.relative(dir, folder) + '/', kind: kindOf(folder) }));
+}
+function kindOf(dir) {
+  try { const f = path.join(dir, 'package.json'); if (fs.statSync(f).size > 300_000) throw 0; const pkg = JSON.parse(fs.readFileSync(f, 'utf8')); const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) }; const k = NODE_KINDS.find(([d]) => deps[d]); return k ? k[1] : null; } catch {}
+  const k = FILE_KINDS.find(([f]) => fs.existsSync(path.join(dir, f)));
+  return k ? k[1] : null;
+}
+
 /**
- * Check a code folder the user typed: absolute, inside the home folder (not the home folder itself), a folder.
+ * Check the folder the user gave: absolute, inside the home folder (not the home folder itself), a folder that holds an
+ * app's codebase. When it does not, the codebases one and two folders down are offered (`candidates`).
  * Returns what the brief shows and suggests: its name, the framework, the start command and the usual address.
  */
 export function checkFolder(input, { home = os.homedir() } = {}) {
   const raw = String(input ?? '').trim().replace(/^~(?=$|\/)/, home);
-  if (!raw) return { ok: false, error: 'Give the folder your product\'s code is in.' };
-  if (!path.isAbsolute(raw)) return { ok: false, error: 'Give the whole path, for example ~/code/my-app.' };
+  if (!raw) return { ok: false, error: 'Give the folder containing your app\'s codebase, or use Choose folder.' };
+  if (!path.isAbsolute(raw)) return { ok: false, error: 'Give the whole path to the folder containing your codebase, for example ~/code/my-app, or use Choose folder.' };
   let real;
-  try { real = fs.realpathSync(raw); } catch { return { ok: false, error: 'There is no folder there.' }; }
+  try { real = fs.realpathSync(raw); } catch { return { ok: false, error: 'Nothing at that path. Use Choose folder to pick the folder containing your codebase.' }; }
   let homeReal = home; try { homeReal = fs.realpathSync(home); } catch {}
-  if (real === homeReal || !real.startsWith(homeReal + path.sep)) return { ok: false, error: 'The folder must be inside your home folder (and not the home folder itself).' };
-  if (!fs.statSync(real).isDirectory()) return { ok: false, error: 'That is a file, not a folder.' };
+  if (real === homeReal || !real.startsWith(homeReal + path.sep)) return { ok: false, error: 'The folder containing your codebase must be inside your home folder (and not the home folder itself).' };
+  if (!fs.statSync(real).isDirectory()) return { ok: false, error: 'That is a file. Give the folder containing your codebase.' };
+  if (!hasCodebase(real)) {
+    const candidates = codebasesBelow(real);
+    const k = (c) => `${c.rel}${c.kind ? ` (${c.kind})` : ''}`;
+    if (candidates.length === 1) return { ok: false, folder: real, candidates, error: `Your app's codebase looks like it's in ${k(candidates[0])}. Use that folder?` };
+    if (candidates.length > 1) return { ok: false, folder: real, candidates, error: `This folder holds ${candidates.length} codebases. Pick the one for your app.` };
+    return { ok: false, folder: real, candidates: [], error: 'This folder doesn\'t contain a codebase: no package.json, manage.py, Gemfile, go.mod or similar in it or in the two folders below. Choose the folder containing your app\'s codebase. It does not need to be a git repository.' };
+  }
   const has = (f) => fs.existsSync(path.join(real, f));
   let pkg = null;
   try { const f = path.join(real, 'package.json'); if (fs.statSync(f).size < 300_000) pkg = JSON.parse(fs.readFileSync(f, 'utf8')); } catch {}
@@ -74,6 +109,34 @@ export function checkFolder(input, { home = os.homedir() } = {}) {
     kind, scripts: Object.keys(scripts).slice(0, 12), command, address: port ? `http://localhost:${port}/` : null,
     git: has('.git'), installed: pkg ? has('node_modules') : null,
   };
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// the folder picker: a browser never gives a page the full path of a folder, so the brief's own server (on this
+// computer) opens the system's folder dialog. Fixed arguments only: nothing from the page reaches the command.
+
+const PICK_PROMPT = 'Choose the folder containing your app\'s codebase';
+let picking = false;
+/** The command that opens a folder dialog here, or null (Linux without zenity, or another system). */
+export function pickerCommand(platform = process.platform, { which = (c) => { try { return execFileSync('which', [c], { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } } } = {}) {
+  if (platform === 'darwin') return ['osascript', ['-e', 'tell me to activate', '-e', `POSIX path of (choose folder with prompt "${PICK_PROMPT}" default location (path to home folder))`]];
+  if (platform === 'win32') return ['powershell.exe', ['-NoProfile', '-STA', '-Command', `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = '${PICK_PROMPT.replace(/'/g, "''")}'; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath }`]];
+  if (platform === 'linux' && which('zenity')) return ['zenity', ['--file-selection', '--directory', `--title=${PICK_PROMPT}`]];
+  return null;
+}
+/** Open the folder dialog and wait for the choice. { ok, folder } | { ok: false, cancelled } | { ok: false, unavailable } |
+ * { ok: false, busy }. The chosen folder is checked like a typed one. */
+export async function pickFolder({ platform = process.platform, run = null, timeoutMs = 300_000 } = {}) {
+  const cmd = pickerCommand(platform);
+  if (!cmd) return { ok: false, unavailable: true };
+  if (picking) return { ok: false, busy: true, error: 'The folder picker is already open on your computer.' };
+  picking = true;
+  try {
+    const out = await (run ? run(cmd[0], cmd[1]) : new Promise((resolve) => execFile(cmd[0], cmd[1], { timeout: timeoutMs, windowsHide: false }, (err, stdout) => resolve(err ? null : String(stdout)))));
+    const folder = String(out || '').trim().replace(/\/+$/, '');
+    if (!folder) return { ok: false, cancelled: true };
+    return { ok: true, folder };
+  } finally { picking = false; }
 }
 
 /** Does the local address answer? (Only local addresses are tried.) */

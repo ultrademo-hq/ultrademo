@@ -29,6 +29,7 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
 .udn-rm{all:unset;cursor:pointer;font-size:12.5px;color:var(--text-muted,#555);padding:2px 6px;border-radius:6px}.udn-rm:hover{background:var(--surface,#fff)}
 .udn-t{font-size:15px;line-height:1.45;outline:none;border-radius:6px;padding:2px 4px;margin:0 -4px;white-space:pre-wrap;word-break:break-word}.udn-t:focus{background:var(--surface,#fff);box-shadow:0 0 0 2px var(--line,#ddd)}
 .udn-keep{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12.5px;color:var(--text-muted,#555);cursor:pointer}
+.udn-kst{display:block;margin:3px 0 0 22px;font-size:12.5px;color:var(--text-muted,#555)}.udn-kst[hidden]{display:none}.udn-kst.ok{color:#0f6a40;font-weight:600}.udn-kst.ok::before{content:'✓';display:inline-grid;place-items:center;width:15px;height:15px;margin-right:5px;border-radius:50%;background:#12a150;color:#fff;font-size:10px;line-height:1;vertical-align:-2px}
 .udn-add{border-top:1px solid var(--line,#ddd);padding:14px 22px 18px;display:flex;flex-direction:column;gap:8px}
 .udn-add textarea{width:100%;box-sizing:border-box;min-height:64px;font:15px/1.4 var(--ud-body,system-ui);padding:10px 12px;border:1px solid var(--line,#ddd);border-radius:10px;background:var(--surface-soft,#f6f6f2);color:inherit;resize:vertical}
 .udn-row{display:flex;justify-content:space-between;align-items:center;gap:8px}.udn-row small{color:var(--text-muted,#555)}
@@ -56,7 +57,7 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
 (function(){
   var C = ${cfg};
   var body = document.body, list = document.getElementById('udn-list'), count = document.getElementById('udn-count'), state = document.getElementById('udn-state');
-  var notes = [], timer = null, api = C.api;
+  var notes = [], timer = null, api = C.api, brand = null, kst = [];
   var FROM = { brief: 'Your brief', outline: 'The outline', direction: 'The direction', production: 'Production', review: 'The review', delivery: 'Delivery', dashboard: 'The dashboard', you: 'You', ultrademo: 'Ultrademo', brand: 'Kept for the brand' };
   function el(tag, cls, text){ var x = document.createElement(tag); if (cls) x.className = cls; if (text != null) x.textContent = text; return x; }
   function open(on){ body.classList.toggle('udn-open', on); document.getElementById('udn-tab').setAttribute('aria-expanded', on ? 'true' : 'false'); document.getElementById('udn-drawer').setAttribute('aria-hidden', on ? 'false' : 'true'); }
@@ -66,6 +67,7 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
       fetch(api, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ notes: notes }) })
         .then(function(r){ return r.json(); }).then(function(j){
           state.textContent = j.ok ? 'Saved with this video' : (j.error || 'Could not save');
+          if (j.ok) { brand = j.brand || null; kept(); }
           // keep the same note objects (the drawer's boxes are tied to them); take only the ids the server gave
           if (j.ok) { (j.notes || []).forEach(function(x, i){ if (notes[i] && notes[i].text.trim() === x.text) notes[i].id = x.id; }); count.textContent = notes.length; }
         })
@@ -73,7 +75,7 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
     }, 500);
   }
   function draw(){
-    list.innerHTML = ''; count.textContent = notes.length;
+    list.innerHTML = ''; kst = []; count.textContent = notes.length;
     if (!notes.length) list.appendChild(el('div', 'udn-empty', 'No notes yet. Anything you add here follows the video through every step.'));
     notes.forEach(function(n, i){
       var box = el('div', 'udn-note'), meta = el('div', 'udn-meta');
@@ -83,9 +85,17 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
       var t = el('div', 'udn-t', n.text); t.contentEditable = 'true'; t.spellcheck = true; t.setAttribute('role', 'textbox'); t.setAttribute('aria-label', 'Note');
       t.addEventListener('input', function(){ n.text = t.textContent; save(); }); box.appendChild(t);
       var keep = el('label', 'udn-keep'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!n.brand;
-      cb.addEventListener('change', function(){ n.brand = cb.checked; save(); }); keep.appendChild(cb); keep.appendChild(document.createTextNode('Keep for the brand\\u2019s next videos'));
-      box.appendChild(keep); list.appendChild(box);
+      var st = el('span', 'udn-kst'); st.setAttribute('aria-live', 'polite'); kst[i] = st;
+      cb.addEventListener('change', function(){ n.brand = cb.checked; st.className = 'udn-kst'; st.textContent = cb.checked ? 'Saving\\u2026' : ''; st.hidden = !cb.checked; save(); }); keep.appendChild(cb); keep.appendChild(document.createTextNode('Keep for the brand\\u2019s future videos'));
+      box.appendChild(keep); box.appendChild(st); list.appendChild(box);
     });
+    kept();
+  }
+  // a ticked note says where it went: a green check once the saved brand has it, a plain line when no brand is saved yet
+  function kept(){
+    notes.forEach(function(n, i){ var st = kst[i]; if (!st) return; st.hidden = !n.brand; if (!n.brand) { st.textContent = ''; return; }
+      if (brand) { st.className = 'udn-kst ok'; st.textContent = 'Saved to ' + brand.name + '\\u2019s memory'; }
+      else { st.className = 'udn-kst'; st.textContent = 'Kept for this brand once you save it'; } });
   }
   document.getElementById('udn-tab').addEventListener('click', function(){ open(!body.classList.contains('udn-open')); });
   document.getElementById('udn-x').addEventListener('click', function(){ open(false); });
@@ -179,7 +189,7 @@ export function notesUi(stage = null, { api = '/api/notes', tab = true, banner =
   }
   function load(newApi){
     if (newApi) api = newApi;
-    return fetch(api, { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ if (!j.ok) return; notes = j.notes || []; draw(); return j; });
+    return fetch(api, { cache: 'no-store' }).then(function(r){ return r.json(); }).then(function(j){ if (!j.ok) return; notes = j.notes || []; brand = j.brand || null; draw(); return j; });
   }
   // a page of one video loads its notes now; the dashboard has no video of its own until a card's Notes is pressed
   ${tab ? "if (location.protocol === 'http:') load().then(function(j){ if (j) wire(j); else throw 0; }).catch(function(){ ready = {}; if (pending) { var p = pending; pending = null; reopen(p.getAttribute('data-stage'), p); } });" : ''}

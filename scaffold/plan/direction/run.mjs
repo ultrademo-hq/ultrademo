@@ -203,7 +203,10 @@ export async function prepareDirection(args, opts = {}) {
 
   const proposals = { ...baseProposals({ video, brand, scout, args }), stage: 'style', style: null, directions: [], dropped: [], reasoning: '' };
   writeJson(path.join(dirDir, 'proposals.json'), proposals);
-  writeState(projectDir, { stage: 'style', style: null, chosen: null });
+  // a video queued with a direction: its style is picked already, the user presses on (or picks another)
+  const qd = (await import('../queue.mjs')).queuedDirection(projectDir);
+  const qStyle = qd?.style && (qd.style === 'brand' || proposals.styles.some((s) => s.id === qd.style)) ? qd.style : null;
+  writeState(projectDir, { stage: 'style', style: qStyle ? { choice: qStyle, queued: true } : null, chosen: null });
   const seconds = Math.round((Date.now() - t0) / 100) / 10;
   log(`${ledger.line()} · ${seconds}s`);
   return { projectDir, proposals, ledger, seconds };
